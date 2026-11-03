@@ -231,3 +231,22 @@ reste externe et n'est jamais touchée.
 Les tests hôte couvrent l'import initial et le remplacement, annulation, erreurs
 d'écriture/finalisation, identité du titre, restauration et reprise du journal.
 Ils ne remplacent pas une validation du service AM sur console réelle.
+
+## Certificats sur console (1.2.1)
+
+Le RomFS embarque huit racines de confiance choisies dans le bundle Mozilla
+publié par curl, au lieu de charger tout le magasin de bureau (128 certificats).
+Les familles Sectigo, USERTrust, ISRG et DigiCert couvrent GitHub et ses serveurs
+de téléchargement. La vérification des certificats serveur reste activée.
+Un hôte personnalisé signé par une autre autorité nécessite de régénérer le bundle.
+
+```sh
+python3 tools/update_roots.py cacert.pem --github
+```
+
+Sans `--github`, l'outil conserve son mode de conversion du bundle complet.
+Une erreur affiche désormais le numéro du certificat refusé et le code système,
+ou RomFS/DER pour un fichier absent ou invalide. Le chargeur refuse aussi un
+ensemble vide ou tronqué. Les tests imposent un plafond simulé de huit racines.
+Ce plafond de test n'est pas une limite matérielle documentée ; la réduction vise
+à éviter une saturation possible du service système. Validation réelle attendue.

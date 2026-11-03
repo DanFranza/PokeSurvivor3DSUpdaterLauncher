@@ -10,11 +10,28 @@
 #include <algorithm>
 
 static std::string failure(const char* stage,Result r){char b[120];snprintf(b,sizeof b,"%s (0x%08lX).",tr(stage),(unsigned long)r);return b;}
-static bool trust(httpcContext*c,const std::function<bool()>& stopped){
-    FILE*f=fopen("romfs:/roots.bin","rb");if(!f)return false;
-    bool ok=true;unsigned char sz[4];
-    while(fread(sz,1,4,f)==4){if(stopped()){ok=false;break;}uint32_t n=sz[0]|sz[1]<<8|sz[2]<<16|sz[3]<<24;if(n>8192||!n){ok=false;break;}std::vector<u8>b(n);if(fread(b.data(),1,n,f)!=n||R_FAILED(httpcAddTrustedRootCA(c,b.data(),n))){ok=false;break;}}
-    ok=ok&&!ferror(f);fclose(f);return ok;
+static bool trust(httpcContext*c,const std::function<bool()>& stopped,std::string& error){
+    const char* message="Impossible de charger les certificats HTTPS.";
+    FILE*f=fopen("romfs:/roots.bin","rb");
+    if(!f){error=std::string(tr(message))+" (RomFS).";return false;}
+    bool ok=true;unsigned char sz[4];unsigned count=0;
+    while(true){
+        size_t read=fread(sz,1,4,f);
+        if(!read){if(ferror(f)||!count)ok=false;break;}
+        if(read!=4){ok=false;break;}
+        if(stopped()){error="Téléchargement annulé.";ok=false;break;}
+        uint32_t n=uint32_t(sz[0])|uint32_t(sz[1])<<8|uint32_t(sz[2])<<16|uint32_t(sz[3])<<24;
+        if(n>8192||!n){ok=false;break;}
+        std::vector<u8>b(n);
+        if(fread(b.data(),1,n,f)!=n){ok=false;break;}
+        Result result=httpcAddTrustedRootCA(c,b.data(),n);
+        if(R_FAILED(result)){
+            char detail[80];snprintf(detail,sizeof detail," (CA %u, 0x%08lX).",count+1,(unsigned long)(uint32_t)result);
+            error=std::string(tr(message))+detail;ok=false;break;
+        }
+        ++count;
+    }
+    fclose(f);if(!ok&&error.empty())error=std::string(tr(message))+" (DER).";return ok;
 }
 bool fetch(const std::string&initial,const std::string&path,uint64_t limit,uint64_t exact,std::string&e,const Progress&progress,const FetchOptions&options){
     auto now=[&](){return options.nowNs?options.nowNs():uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());};
@@ -30,7 +47,7 @@ bool fetch(const std::string&initial,const std::string&path,uint64_t limit,uint6
         httpcContext c{};r=httpcOpenContext(&c,HTTPC_METHOD_GET,url.c_str(),1);
         if(R_FAILED(r)){e=failure("Connexion HTTPS impossible",r);break;}
         auto close=[&](){httpcCloseContext(&c);};
-        if(!trust(&c,stopped)){e="Impossible de charger les certificats HTTPS.";close();break;}
+        if(!trust(&c,stopped,e)){close();break;}
         r=httpcAddRequestHeaderField(&c,"User-Agent","PokeSurvivor-Launcher/" LAUNCHER_VERSION);
         if(R_SUCCEEDED(r))r=httpcAddRequestHeaderField(&c,"Accept-Encoding","identity");
         if(R_SUCCEEDED(r))r=httpcBeginRequest(&c);

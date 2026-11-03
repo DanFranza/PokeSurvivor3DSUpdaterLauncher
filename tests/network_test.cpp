@@ -10,12 +10,13 @@ struct Response{u32 status;std::string body,location;bool timeout=false;int head
 static std::vector<Response> responses;
 static size_t requestIndex=0,position=0;
 static unsigned checks=0,opened=0,closed=0;
+static unsigned caCalls=0,caLimit=1000;
 static u64 ticks=0;static std::vector<u64> waits;
 #define CHECK(x) do{++checks;if(!(x)){std::cerr<<"Échec réseau ligne "<<__LINE__<<": "<<#x<<"\n";std::abort();}}while(0)
 Result httpcInit(u32){return 0;}void httpcExit(){}
 Result httpcOpenContext(httpcContext*c,int,const char*url,u32){CHECK(secureUrl(url));if(requestIndex>=responses.size())return -1;c->httphandle=requestIndex++;position=0;++opened;return 0;}
 Result httpcCloseContext(httpcContext*){++closed;return 0;}
-Result httpcAddTrustedRootCA(httpcContext*,const u8*,u32){return 0;}
+Result httpcAddTrustedRootCA(httpcContext*,const u8*,u32){return ++caCalls>caLimit?Result(0xD8A0A001):0;}
 Result httpcAddRequestHeaderField(httpcContext*,const char*,const char*){return 0;}
 Result httpcBeginRequest(httpcContext*){return 0;}
 Result httpcGetResponseStatusCodeTimeout(httpcContext*c,u32*s,u64 timeout){waits.push_back(timeout);auto&r=responses[c->httphandle];if(r.headerWaits>0){--r.headerWaits;ticks+=timeout;return Result(HTTPC_RESULTCODE_TIMEDOUT);}*s=r.status;return 0;}
@@ -23,7 +24,7 @@ Result httpcGetResponseHeader(httpcContext*c,const char*,char*out,u32 n){auto s=
 Result httpcGetDownloadSizeState(httpcContext*c,u32*downloaded,u32*total){*downloaded=position;*total=responses[c->httphandle].body.size();return 0;}
 Result httpcReceiveDataTimeout(httpcContext*c,u8*out,u32 n,u64 timeout){waits.push_back(timeout);auto&r=responses[c->httphandle];if(r.timeout||r.readWaits>0){if(r.readWaits>0)--r.readWaits;ticks+=timeout;if(r.partial){size_t part=std::min(size_t(3),r.body.size()-position);memcpy(out,r.body.data()+position,part);position+=part;}return Result(HTTPC_RESULTCODE_TIMEDOUT);}size_t count=std::min(size_t(n),r.body.size()-position);memcpy(out,r.body.data()+position,count);position+=count;return position<r.body.size()?Result(HTTPC_RESULTCODE_DOWNLOADPENDING):0;}
 static bool download(const std::vector<Response>&r,uint64_t limit,uint64_t exact,bool cancel=false,const FetchOptions& options={}){responses=r;requestIndex=0;std::string error;bool ok=fetch("https://github.com/file","received.bin",limit,exact,error,[&](uint64_t,uint64_t){return !cancel;},options);CHECK(opened==closed);CHECK(ok||!exists("received.bin"));return ok;}
-int main(){
+int main(int argc,char**argv){
     std::filesystem::create_directories("romfs:");
     std::ofstream roots("romfs:/roots.bin",std::ios::binary);const char dummy[]={1,0,0,0,42};roots.write(dummy,sizeof dummy);roots.close();
     std::string body(100000,'A');body.back()='Z';
@@ -46,5 +47,18 @@ int main(){
     ticks=0;options.budgetNs=1000000000;options.cancelled=[](){return ticks>=100000000;};CHECK(!download({{200,"","",false,100}},100,0,false,options));CHECK(ticks==100000000);
     options.cancelled={};options.budgetNs=350000000;ticks=0;CHECK(!download({{302,"","https://github.com/next",false,2},{200,"abc","",false,2}},3,3,false,options));CHECK(ticks==350000000);
     for(auto wait:waits)CHECK(wait<=100000000);
+    auto trustFailure=[&](const std::string& bundle,const std::string& detail){
+        std::ofstream file("romfs:/roots.bin",std::ios::binary);file.write(bundle.data(),bundle.size());file.close();
+        responses={{200,"abc",""}};requestIndex=0;caCalls=0;std::string error;
+        CHECK(!fetch("https://github.com/file","received.bin",3,3,error,[](uint64_t,uint64_t){return true;}));
+        CHECK(error.find(detail)!=std::string::npos);CHECK(opened==closed);CHECK(!exists("received.bin"));
+    };
+    trustFailure("","DER");trustFailure(std::string(1,'x'),"DER");
+    trustFailure(std::string("\x02\0\0\0x",5),"DER");
+    caLimit=0;trustFailure(std::string(dummy,sizeof dummy),"0xD8A0A001");
+    if(argc>1){
+        std::filesystem::copy_file(argv[1],"romfs:/roots.bin",std::filesystem::copy_options::overwrite_existing);
+        caLimit=8;caCalls=0;CHECK(download({{200,"abc",""}},3,3));CHECK(caCalls==8);
+    }
     std::cout<<checks<<" vérifications réseau réussies.\n";
 }

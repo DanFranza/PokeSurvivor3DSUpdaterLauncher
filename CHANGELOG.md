@@ -1,5 +1,13 @@
 # Historique
 
+## 1.2.1
+
+- Ensemble HTTPS réduit de 128 à huit racines utiles à GitHub, pour limiter les ressources demandées au service de la console.
+- Racines actualisées depuis le bundle Mozilla de curl ; vérification HTTPS toujours active.
+- Erreurs de chargement détaillées : RomFS, données DER ou numéro du certificat et code système.
+- Refus des ensembles vides ou tronqués et tests de régression sur les certificats intégrés.
+- Correctif compilé et testé sur ordinateur ; confirmation sur console réelle attendue.
+
 ## 1.2.0
 
 - Notification de changement du jeu en arrière-plan, budget de trois secondes et cache de quinze minutes.

@@ -18,7 +18,7 @@ Ce dépôt contient uniquement le lanceur et son programme de mise à jour.
 
 - `pokesurvivor-launcher.3dsx` : ouverture depuis Homebrew Launcher.
 - `pokesurvivor-launcher.cia` : icône installable dans le menu HOME.
-- `PokeSurvivorLauncher-1.2.0.zip` : les deux formats, les sources et les licences.
+- `PokeSurvivorLauncher-1.2.1.zip` : les deux formats, les sources et les licences.
 
 ## Installer
 
