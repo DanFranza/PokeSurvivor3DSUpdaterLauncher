@@ -1,4 +1,4 @@
-# PokéSurvivor — lanceur 3DS (1.0.2)
+# PokéSurvivor — lanceur 3DS (1.1.0)
 
 Petit lanceur indépendant du jeu, compilé en **3DSX et CIA**. Interface française,
 police Pixelify, panneaux bleus du portage, Pikachu animé, commandes tactiles et croix.
@@ -185,3 +185,21 @@ Aucun essai de coupure physique de SD n’a été effectué. La fonction de mise
 - Tampons de lecture et de vérification alloués sur le tas ; pile du thread principal portée à 256 Kio pour éviter un débordement pendant la vérification d’un jeu complet.
 
 - Test réel Azahar réussi : recherche en ligne, téléchargement des 48 334 904 octets depuis GitHub, vérification, installation et affichage « Mise à jour terminée ». Le fichier présent sur la SD virtuelle est identique au jeu publié ; aucun fichier de transaction ne reste.
+
+## Langues du lanceur (1.1.0)
+
+La préférence est indépendante de `config.ini` : `language.txt` contient un code
+parmi `fr`, `en`, `es`, `it`, `pt`. Un fichier absent ou invalide ouvre le sélecteur
+au démarrage. Une sélection confirmée est enregistrée avec écriture et synchronisation
+avant renommage. Une erreur d'écriture est signalée dans la langue choisie.
+
+Les clés françaises et leurs quatre traductions sont dans `translations/launcher.tsv`.
+`tools/generate_translations.py` vérifie les cinq colonnes, les clés uniques et les
+paramètres `{0}`, `{1}` ou printf. `source/translations.inc` est généré et versionné.
+Les codes de version et les fichiers de transaction restent indépendants de la langue.
+Les messages de stockage sont traduits au moment de leur affichage ; les messages
+paramétrés et les erreurs réseau sont composés dans la langue active.
+
+`tools/localize_smdh.py` localise les descriptions d'application utilisées par le
+Homebrew Launcher et le menu HOME selon la langue de la console. Cette langue
+système est distincte de la préférence choisie dans l'interface du lanceur.

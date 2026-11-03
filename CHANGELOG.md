@@ -1,5 +1,13 @@
 # Historique
 
+## 1.1.0 — 3 novembre 2026
+
+- Menu de langue sur l’écran inférieur, affiché au premier démarrage et accessible au tactile, à la croix ou avec X.
+- Français, anglais, espagnol, italien et portugais : 121 messages, confirmations, progression et erreurs traduits.
+- Choix conservé dans `language.txt`, sans modifier la configuration GitHub ni la sauvegarde du jeu.
+- Informations d’application SMDH traduites pour les cinq langues.
+- Tests de couverture des traductions, paramètres de messages et conservation de la préférence ; contrôle visuel des cinq langues dans Azahar.
+
 ## 1.0.2 — 3 novembre 2026
 
 - Mention explicite « Port PokéSurvivor 3DS de Dan Franza » à l'écran.

@@ -197,6 +197,12 @@ else
 #---------------------------------------------------------------------------------
 # main targets
 #---------------------------------------------------------------------------------
+.DEFAULT_GOAL := $(OUTPUT).3dsx
+
+$(OUTPUT).smdh: $(APP_ICON) $(TOPDIR)/tools/localize_smdh.py $(MAKEFILE_LIST)
+	smdhtool --create "$(APP_TITLE)" "$(APP_DESCRIPTION)" "$(APP_AUTHOR)" $(APP_ICON) $@
+	python3 $(TOPDIR)/tools/localize_smdh.py $@
+
 $(OUTPUT).3dsx	:	$(OUTPUT).elf $(_3DSXDEPS)
 
 $(OFILES_SOURCES) : $(HFILES)

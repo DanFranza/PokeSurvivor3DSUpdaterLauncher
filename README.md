@@ -18,7 +18,7 @@ Ce dépôt contient uniquement le lanceur et son programme de mise à jour.
 
 - `pokesurvivor-launcher.3dsx` : ouverture depuis Homebrew Launcher.
 - `pokesurvivor-launcher.cia` : icône installable dans le menu HOME.
-- `PokeSurvivorLauncher-1.0.2.zip` : les deux formats, les sources et les licences.
+- `PokeSurvivorLauncher-1.1.0.zip` : les deux formats, les sources et les licences.
 
 ## Installer
 
@@ -40,6 +40,24 @@ correspondant doit être configuré dans Luma. Le lanceur vérifie ce prérequis
 Le CIA est celui du lanceur : le jeu reste un fichier 3DSX sur la carte SD.
 
 Le RomFS du lanceur est intégré : aucun dossier graphique supplémentaire à copier.
+
+## Choisir la langue
+
+Au premier démarrage, l'écran inférieur propose **Français, English, Español,
+Italiano et Português**. Toucher une langue ou la sélectionner avec la croix puis A.
+Le choix s'applique immédiatement et reste enregistré pour les prochains démarrages.
+
+Pour changer ensuite, toucher la barre **Langue** en haut de l'écran inférieur,
+appuyer sur **X**, ou sélectionner cette barre à la croix puis A. B ferme le menu.
+Les menus, confirmations, téléchargements, erreurs et informations de version sont
+traduits dans les cinq langues. Les noms des langues restent affichés dans leur
+propre langue pour faciliter le choix.
+
+Le réglage est conservé dans `sd:/3ds/PokeSurvivorLauncher/language.txt`
+(`fr`, `en`, `es`, `it` ou `pt`), séparément de l'adresse de téléchargement.
+Ce choix ne modifie pas la langue du jeu lui-même.
+
+<img src="assets/languages.png" alt="Choix des cinq langues sur l'écran inférieur" width="400">
 
 ## Les trois options
 
@@ -103,13 +121,17 @@ MAKEROM=/chemin/makerom ./tools/build.sh --cia
 ```
 
 Les tests sur ordinateur nécessitent un compilateur C++17 et Python 3.
+Les traductions se trouvent dans `translations/launcher.tsv` (colonnes FR/EN/ES/IT/PT).
+Après une modification, exécuter `python3 tools/generate_translations.py` pour
+régénérer la table C++. Le build vérifie la présence des cinq traductions et la
+conservation des paramètres des messages.
 Voir [la documentation technique](docs/TECHNICAL.md) pour le journal de récupération,
 le format de configuration, les outils et le mode de publication alternatif.
 
 ### État de validation
 
 - Compilation des versions 3DSX et CIA.
-- Interface contrôlée dans Azahar 2126.2.
+- Interface, sélection des cinq langues et conservation du choix après redémarrage contrôlées dans Azahar 2126.2.
 - Téléchargement réel de 48 334 904 octets depuis GitHub, contrôle d'intégrité et
   installation complète réussis dans Azahar.
 - Tests automatisés de stockage, restauration, interruptions, transfert HTTP,

@@ -1,11 +1,13 @@
 #include "network.h"
+#include "i18n.h"
+#include "version.h"
 #include <3ds.h>
 #include <cstdio>
 #include <cstring>
 #include <unistd.h>
 #include <vector>
 
-static std::string failure(const char* stage,Result r){char b[120];snprintf(b,sizeof b,"%s (0x%08lX).",stage,(unsigned long)r);return b;}
+static std::string failure(const char* stage,Result r){char b[120];snprintf(b,sizeof b,"%s (0x%08lX).",tr(stage),(unsigned long)r);return b;}
 static bool trust(httpcContext*c){
     FILE*f=fopen("romfs:/roots.bin","rb");if(!f)return false;
     bool ok=true;unsigned char sz[4];
@@ -21,7 +23,7 @@ bool fetch(const std::string&initial,const std::string&path,uint64_t limit,uint6
         if(R_FAILED(r)){e=failure("Connexion HTTPS impossible",r);break;}
         auto close=[&](){httpcCloseContext(&c);};
         if(!trust(&c)){e="Impossible de charger les certificats HTTPS.";close();break;}
-        r=httpcAddRequestHeaderField(&c,"User-Agent","PokeSurvivor-Launcher/1.0.2");
+        r=httpcAddRequestHeaderField(&c,"User-Agent","PokeSurvivor-Launcher/" LAUNCHER_VERSION);
         if(R_SUCCEEDED(r))r=httpcAddRequestHeaderField(&c,"Accept-Encoding","identity");
         if(R_SUCCEEDED(r))r=httpcBeginRequest(&c);
         u32 status=0;if(R_SUCCEEDED(r))r=httpcGetResponseStatusCodeTimeout(&c,&status,15000000000ull);
@@ -34,7 +36,7 @@ bool fetch(const std::string&initial,const std::string&path,uint64_t limit,uint6
             else if(!next.empty()&&next[0]=='/'){auto slash=url.find('/',8);next=url.substr(0,slash)+next;}
             url=next;if(redirects==8)e="Trop de redirections HTTPS.";continue;
         }
-        if(status!=200){e="Serveur HTTP : "+std::to_string(status)+". Vérifier le fichier publié sur GitHub.";close();break;}
+        if(status!=200){e=trf("Serveur HTTP : {0}. Vérifier le fichier publié sur GitHub.",{std::to_string(status)});close();break;}
         out=fopen(path.c_str(),"wb");if(!out){e="Impossible d'écrire sur la carte SD.";close();break;}
         std::vector<u8>buffer(32768);uint64_t total=0;bool body=true;
         while(true){

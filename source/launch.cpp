@@ -1,4 +1,5 @@
 #include "launch.h"
+#include "i18n.h"
 #include <3ds.h>
 #include <cstring>
 #include <cstdio>
@@ -26,7 +27,7 @@ bool prepareLaunch(const std::string&path,std::string&e){
         r=svcSendSyncRequest(h);if(R_SUCCEEDED(r))r=cmd[1];
     }
     svcCloseHandle(h);
-    if(R_FAILED(r)){char b[96];snprintf(b,sizeof b,"Lancement refusé (0x%08lX).",(unsigned long)r);e=b;return false;}
+    if(R_FAILED(r)){char b[96];snprintf(b,sizeof b,tr("Lancement refusé (0x%08lX)."),(unsigned long)r);e=b;return false;}
     if(tid)aptSetChainloader(tid,MEDIATYPE_SD);
     return true;
 }
