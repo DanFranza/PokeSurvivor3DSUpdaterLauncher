@@ -18,7 +18,7 @@ Ce dépôt contient uniquement le lanceur et son programme de mise à jour.
 
 - `pokesurvivor-launcher.3dsx` : ouverture depuis Homebrew Launcher.
 - `pokesurvivor-launcher.cia` : icône installable dans le menu HOME.
-- `PokeSurvivorLauncher-1.2.1.zip` : les deux formats, les sources et les licences.
+- `PokeSurvivorLauncher-1.2.2.zip` : les deux formats, les sources et les licences.
 
 ## Installer
 
@@ -105,7 +105,8 @@ binaire dans la branche suffit pour que le lanceur détecte une nouvelle version
 Le CIA est publié au même emplacement sous le nom `pokesurvivor3ds.cia`.
 La version affichée, `3ds-…` ou `cia-…`, identifie le contenu du fichier publié.
 
-Les connexions utilisent HTTPS avec vérification des certificats. La taille et
+Les connexions utilisent libcurl et mbedTLS intégrés au lanceur, avec vérification
+des certificats HTTPS. La date et l’heure de la console doivent être correctes. La taille et
 l'identifiant de l'objet Git sont contrôlés avant l'installation ; les copies de
 secours sont vérifiées avec SHA-256. Un téléchargement incomplet ou refusé laisse
 le jeu actuel intact. Un journal permet de récupérer une installation interrompue,
@@ -132,12 +133,16 @@ Prérequis : devkitPro avec `3ds-dev`, libctru, citro2d et citro3d ; `makerom` p
 Le RomFS et la bannière nécessaires sont fournis.
 
 ```sh
+python3 tools/build_network.py --directory /chemin/dependances-reseau
+export NETWORK_PREFIX=/chemin/dependances-reseau/prefix
 ./tools/build.sh
 MAKEROM=/chemin/makerom ./tools/build.sh --cia
 ./tools/test.sh
 ```
 
-Les tests sur ordinateur nécessitent un compilateur C++17 et Python 3.
+La compilation des dépendances nécessite Python 3.12 ou plus récent.
+Les tests sur ordinateur nécessitent un compilateur C++17, Python 3, libcurl
+et OpenSSL. Ils ouvrent temporairement un serveur HTTPS local.
 Les traductions se trouvent dans `translations/launcher.tsv` (colonnes FR/EN/ES/IT/PT).
 Après une modification, exécuter `python3 tools/generate_translations.py` pour
 régénérer la table C++. Le build vérifie la présence des cinq traductions et la

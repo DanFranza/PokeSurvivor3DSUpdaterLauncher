@@ -1,103 +1,187 @@
 #include "network.h"
 #include "i18n.h"
 #include "version.h"
-#include <3ds.h>
-#include <cstdio>
-#include <cstring>
-#include <unistd.h>
-#include <vector>
-#include <chrono>
+#include <curl/curl.h>
 #include <algorithm>
+#include <chrono>
+#include <cstdio>
+#include <climits>
+#include <memory>
+#include <unistd.h>
+#ifdef __3DS__
+#include <3ds.h>
+#include <malloc.h>
+#endif
 
-static std::string failure(const char* stage,Result r){char b[120];snprintf(b,sizeof b,"%s (0x%08lX).",tr(stage),(unsigned long)r);return b;}
-static bool trust(httpcContext*c,const std::function<bool()>& stopped,std::string& error){
-    const char* message="Impossible de charger les certificats HTTPS.";
-    FILE*f=fopen("romfs:/roots.bin","rb");
-    if(!f){error=std::string(tr(message))+" (RomFS).";return false;}
-    bool ok=true;unsigned char sz[4];unsigned count=0;
-    while(true){
-        size_t read=fread(sz,1,4,f);
-        if(!read){if(ferror(f)||!count)ok=false;break;}
-        if(read!=4){ok=false;break;}
-        if(stopped()){error="Téléchargement annulé.";ok=false;break;}
-        uint32_t n=uint32_t(sz[0])|uint32_t(sz[1])<<8|uint32_t(sz[2])<<16|uint32_t(sz[3])<<24;
-        if(n>8192||!n){ok=false;break;}
-        std::vector<u8>b(n);
-        if(fread(b.data(),1,n,f)!=n){ok=false;break;}
-        Result result=httpcAddTrustedRootCA(c,b.data(),n);
-        if(R_FAILED(result)){
-            char detail[80];snprintf(detail,sizeof detail," (CA %u, 0x%08lX).",count+1,(unsigned long)(uint32_t)result);
-            error=std::string(tr(message))+detail;ok=false;break;
-        }
-        ++count;
+namespace {
+uint64_t clockNs(){return uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());}
+long millis(uint64_t ns){return long(std::min<uint64_t>(LONG_MAX,std::max<uint64_t>(1,ns/1000000)));}
+struct Environment {
+#ifdef __3DS__
+    u32* sockets=nullptr;
+    bool soc=false,ssl=false;
+#endif
+    bool curl=false;
+    bool open(std::string& error){
+#ifdef __3DS__
+        sockets=(u32*)memalign(0x1000,0x100000);
+        if(!sockets){error="Initialisation Internet impossible";return false;}
+        Result result=socInit(sockets,0x100000);
+        if(R_FAILED(result)){error=detail("Initialisation Internet impossible",result);return false;}
+        soc=true;result=sslcInit(0);
+        if(R_FAILED(result)){error=detail("Initialisation Internet impossible",result);return false;}
+        ssl=true;
+#endif
+        CURLcode resultCurl=curl_global_init(CURL_GLOBAL_DEFAULT);
+        if(resultCurl!=CURLE_OK){error="Initialisation Internet impossible";return false;}
+        curl=true;return true;
     }
-    fclose(f);if(!ok&&error.empty())error=std::string(tr(message))+" (DER).";return ok;
+#ifdef __3DS__
+    static std::string detail(const char* stage,Result result){
+        char code[32];snprintf(code,sizeof code," (0x%08lX).",(unsigned long)(uint32_t)result);
+        return std::string(tr(stage))+code;
+    }
+#endif
+    ~Environment(){
+        if(curl)curl_global_cleanup();
+#ifdef __3DS__
+        if(ssl)sslcExit();
+        if(soc)socExit();
+        free(sockets);
+#endif
+    }
+};
+struct Transfer {
+    FILE* output;
+    CURL* curl;
+    uint64_t limit,exact,total=0,lastUi=0;
+    const Progress& progress;
+    const FetchOptions& options;
+    std::string& error;
+    uint64_t started;
+    uint64_t now()const{return options.nowNs?options.nowNs():clockNs();}
+    bool stopped()const{return (options.cancelled&&options.cancelled())||(options.budgetNs&&now()-started>=options.budgetNs);}
+    bool notify(bool force=false){
+        if(stopped()){error="Téléchargement annulé.";return false;}
+        uint64_t time=now();
+        if(!force&&time-lastUi<100000000ull)return true;
+        lastUi=time;
+        curl_off_t expected=0;curl_easy_getinfo(curl,CURLINFO_CONTENT_LENGTH_DOWNLOAD_T,&expected);
+        if(!progress(total,exact?exact:(expected>0?uint64_t(expected):0))){error="Téléchargement annulé.";return false;}
+        return true;
+    }
+    static size_t write(char* data,size_t size,size_t count,void* pointer){
+        auto& t=*static_cast<Transfer*>(pointer);
+        if(size&&count>SIZE_MAX/size)return 0;
+        size_t bytes=size*count;
+        long status=0;curl_easy_getinfo(t.curl,CURLINFO_RESPONSE_CODE,&status);
+        // Redirect/error response bodies never enter the staged game file.
+        if(status!=200)return bytes;
+        if(t.stopped()){t.error="Téléchargement annulé.";return 0;}
+        if(bytes>t.limit-t.total){t.error="Téléchargement plus grand que prévu.";return 0;}
+        if(fwrite(data,1,bytes,t.output)!=bytes){t.error="Carte SD pleine ou inaccessible.";return 0;}
+        t.total+=bytes;
+        return bytes;
+    }
+    static int update(void* pointer,curl_off_t,curl_off_t,curl_off_t,curl_off_t){
+        return static_cast<Transfer*>(pointer)->stopped()?1:0;
+    }
+};
 }
-bool fetch(const std::string&initial,const std::string&path,uint64_t limit,uint64_t exact,std::string&e,const Progress&progress,const FetchOptions&options){
-    auto now=[&](){return options.nowNs?options.nowNs():uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());};
-    const uint64_t started=now();
-    auto stopped=[&](){return (options.cancelled&&options.cancelled())||(options.budgetNs&&now()-started>=options.budgetNs);};
-    auto waitTime=[&](){uint64_t n=options.timeoutNs;if(options.pollNs)n=std::min(n,options.pollNs);if(options.budgetNs){uint64_t elapsed=now()-started;n=std::min(n,elapsed<options.budgetNs?options.budgetNs-elapsed:0);}return n;};
-    if(stopped()){e="Téléchargement annulé.";return false;}
-    Result r=httpcInit(0);if(R_FAILED(r)){e=failure("Initialisation Internet impossible",r);return false;}
-    std::string url=initial;bool ok=false;FILE*out=nullptr;
-    for(int redirects=0;redirects<=8;redirects++){
-        if(stopped()){e="Téléchargement annulé.";break;}
-        if(!secureUrl(url)){e="Adresse HTTPS invalide ou redirection non sûre.";break;}
-        httpcContext c{};r=httpcOpenContext(&c,HTTPC_METHOD_GET,url.c_str(),1);
-        if(R_FAILED(r)){e=failure("Connexion HTTPS impossible",r);break;}
-        auto close=[&](){httpcCloseContext(&c);};
-        if(!trust(&c,stopped,e)){close();break;}
-        r=httpcAddRequestHeaderField(&c,"User-Agent","PokeSurvivor-Launcher/" LAUNCHER_VERSION);
-        if(R_SUCCEEDED(r))r=httpcAddRequestHeaderField(&c,"Accept-Encoding","identity");
-        if(R_SUCCEEDED(r))r=httpcBeginRequest(&c);
-        u32 status=0;
-        if(R_SUCCEEDED(r)){
-            do{
-                if(stopped()){r=Result(HTTPC_RESULTCODE_TIMEDOUT);break;}
-                r=httpcGetResponseStatusCodeTimeout(&c,&status,waitTime());
-            }while((u32)r==HTTPC_RESULTCODE_TIMEDOUT&&options.pollNs&&!stopped());
+
+bool fetch(const std::string& initial,const std::string& path,uint64_t limit,uint64_t exact,std::string& error,const Progress& progress,const FetchOptions& options){
+    error.clear();
+    if(!secureUrl(initial)){error="Adresse HTTPS invalide ou redirection non sûre.";return false;}
+    uint64_t started=options.nowNs?options.nowNs():clockNs();
+    auto stopped=[&]{uint64_t now=options.nowNs?options.nowNs():clockNs();return (options.cancelled&&options.cancelled())||(options.budgetNs&&now-started>=options.budgetNs);};
+    if(stopped()){error="Téléchargement annulé.";return false;}
+    Environment environment;if(!environment.open(error))return false;
+    std::string url=initial;bool ok=false;
+    for(int redirects=0;redirects<=8;++redirects){
+        if(stopped()){error="Téléchargement annulé.";break;}
+        if(!secureUrl(url)){error="Adresse HTTPS invalide ou redirection non sûre.";break;}
+        CURL* curl=curl_easy_init();CURLM* multi=curl_multi_init();
+        if(!curl||!multi){if(curl)curl_easy_cleanup(curl);if(multi)curl_multi_cleanup(multi);error="Initialisation Internet impossible";break;}
+        FILE* output=fopen(path.c_str(),"wb");
+        if(!output){curl_easy_cleanup(curl);curl_multi_cleanup(multi);error="Impossible d'écrire sur la carte SD.";break;}
+        Transfer transfer{output,curl,limit,exact,0,0,progress,options,error,started};
+        char diagnostic[CURL_ERROR_SIZE]{};
+        CURLcode setting=CURLE_OK;
+        auto set=[&](CURLoption key,auto value){CURLcode result=curl_easy_setopt(curl,key,value);if(setting==CURLE_OK)setting=result;};
+        set(CURLOPT_ERRORBUFFER,diagnostic);
+        set(CURLOPT_URL,url.c_str());
+        set(CURLOPT_USERAGENT,"PokeSurvivor-Launcher/" LAUNCHER_VERSION);
+        set(CURLOPT_CAINFO,"romfs:/roots.pem");
+        set(CURLOPT_SSL_VERIFYPEER,1L);set(CURLOPT_SSL_VERIFYHOST,2L);
+        set(CURLOPT_SSLVERSION,long(CURL_SSLVERSION_TLSv1_2));
+        set(CURLOPT_PROTOCOLS_STR,"https");set(CURLOPT_REDIR_PROTOCOLS_STR,"https");
+        set(CURLOPT_FOLLOWLOCATION,0L);set(CURLOPT_NOSIGNAL,1L);
+#ifdef NETWORK_TESTING
+        set(CURLOPT_PROXY,"");
+#endif
+        set(CURLOPT_CONNECTTIMEOUT_MS,millis(options.timeoutNs));
+        set(CURLOPT_LOW_SPEED_LIMIT,1L);set(CURLOPT_LOW_SPEED_TIME,std::max(1L,millis(options.timeoutNs)/1000));
+        set(CURLOPT_WRITEFUNCTION,&Transfer::write);set(CURLOPT_WRITEDATA,&transfer);
+        set(CURLOPT_XFERINFOFUNCTION,&Transfer::update);set(CURLOPT_XFERINFODATA,&transfer);set(CURLOPT_NOPROGRESS,0L);
+        set(CURLOPT_HTTP_VERSION,long(CURL_HTTP_VERSION_1_1));
+        if(options.budgetNs){uint64_t elapsed=(options.nowNs?options.nowNs():clockNs())-started;set(CURLOPT_TIMEOUT_MS,millis(elapsed<options.budgetNs?options.budgetNs-elapsed:1));}
+#ifdef NETWORK_TESTING
+        struct curl_slist* mapping=nullptr;
+        if(const char* route=getenv("LAUNCHER_TEST_ROUTE")){mapping=curl_slist_append(mapping,route);set(CURLOPT_CONNECT_TO,mapping);}
+#endif
+        CURLcode result=setting;CURLMcode multiResult=CURLM_OK;bool added=false;
+        if(result==CURLE_OK&&transfer.notify(true)){
+            multiResult=curl_multi_add_handle(multi,curl);added=multiResult==CURLM_OK;
+            int running=0;
+            while(added&&multiResult==CURLM_OK){
+                multiResult=curl_multi_perform(multi,&running);
+                if(!transfer.notify()){result=CURLE_ABORTED_BY_CALLBACK;break;}
+                if(multiResult!=CURLM_OK||!running)break;
+                int ready=0;
+                long wait=options.pollNs?std::min(100L,millis(options.pollNs)):100L;
+                multiResult=curl_multi_wait(multi,nullptr,0,int(wait),&ready);
+            }
+            int remaining=0;bool completed=false;
+            while(CURLMsg* message=curl_multi_info_read(multi,&remaining)){
+                if(message->msg==CURLMSG_DONE){if(result==CURLE_OK)result=message->data.result;completed=true;}
+            }
+            if(result==CURLE_OK&&(!completed||multiResult!=CURLM_OK))result=CURLE_RECV_ERROR;
+        }else if(result==CURLE_OK)result=CURLE_ABORTED_BY_CALLBACK;
+        long status=0;curl_easy_getinfo(curl,CURLINFO_RESPONSE_CODE,&status);
+        char* location=nullptr;curl_easy_getinfo(curl,CURLINFO_REDIRECT_URL,&location);
+        std::string next=location?location:"";
+#ifdef __3DS__
+        if(result!=CURLE_OK){
+            long osError=0;curl_easy_getinfo(curl,CURLINFO_OS_ERRNO,&osError);
+            FILE* log=fopen("sdmc:/3ds/PokeSurvivorLauncher/network-error.txt","w");
+            if(log){fprintf(log,"curl %d, network %ld: %s\n",int(result),osError,diagnostic);fclose(log);}
         }
-        if(R_FAILED(r)){e=failure("Connexion refusée ou délai dépassé",r);close();break;}
+#endif
+        if(added)curl_multi_remove_handle(multi,curl);
+        curl_easy_cleanup(curl);curl_multi_cleanup(multi);
+#ifdef NETWORK_TESTING
+        curl_slist_free_all(mapping);
+#endif
+        bool written=fflush(output)==0&&fsync(fileno(output))==0;
+        if(fclose(output))written=false;
+        if(result!=CURLE_OK){
+            if(error.empty()){
+                if(result==CURLE_PEER_FAILED_VERIFICATION)error=tr("Certificat HTTPS refusé. Vérifiez la date et l'heure de la console.");
+                else if(result==CURLE_SSL_CACERT_BADFILE)error=tr("Impossible de charger les certificats HTTPS.");
+                else error=trf("Connexion HTTPS impossible (curl {0}).",{std::to_string(result)});
+            }
+            break;
+        }
         if(status==301||status==302||status==303||status==307||status==308){
-            char loc[2048]{};r=httpcGetResponseHeader(&c,"Location",loc,sizeof loc);close();
-            if(R_FAILED(r)||!memchr(loc,0,sizeof loc)){e="Redirection GitHub illisible.";break;}
-            std::string next=loc;
-            if(next.compare(0,2,"//")==0)next="https:"+next;
-            else if(!next.empty()&&next[0]=='/'){auto slash=url.find('/',8);next=url.substr(0,slash)+next;}
-            url=next;if(redirects==8)e="Trop de redirections HTTPS.";continue;
+            if(redirects==8){error="Trop de redirections HTTPS.";break;}
+            if(next.empty()||!secureUrl(next)){error="Adresse HTTPS invalide ou redirection non sûre.";break;}
+            url=next;continue;
         }
-        if(status!=200){e=trf("Serveur HTTP : {0}. Vérifier le fichier publié sur GitHub.",{std::to_string(status)});close();break;}
-        out=fopen(path.c_str(),"wb");if(!out){e="Impossible d'écrire sur la carte SD.";close();break;}
-        std::vector<u8>buffer(32768);uint64_t total=0;bool body=true;
-        while(true){
-            if(stopped()){e="Téléchargement annulé.";body=false;break;}
-            u32 before=0,after=0,length=0;
-            r=httpcGetDownloadSizeState(&c,&before,&length);if(R_FAILED(r)){e=failure("Lecture du transfert impossible",r);body=false;break;}
-            r=httpcReceiveDataTimeout(&c,buffer.data(),buffer.size(),waitTime());
-            Result sr=httpcGetDownloadSizeState(&c,&after,&length);
-            if(R_FAILED(sr)||after<before||after-before>buffer.size()){e="Compteur de téléchargement invalide.";body=false;break;}
-            size_t n=after-before;
-            if(total+n>limit){e="Téléchargement plus grand que prévu.";body=false;break;}
-            if(n&&fwrite(buffer.data(),1,n,out)!=n){e="Carte SD pleine ou inaccessible.";body=false;break;}
-            total+=n;
-            if(!progress(total,exact?exact:length)){e="Téléchargement annulé.";body=false;break;}
-            if((u32)r==HTTPC_RESULTCODE_TIMEDOUT&&options.pollNs)continue;
-            if(R_FAILED(r)&&(u32)r!=HTTPC_RESULTCODE_DOWNLOADPENDING){e=failure("Téléchargement interrompu",r);body=false;break;}
-            if(R_SUCCEEDED(r))break;
-            if(!n&&options.pollNs)continue;
-            if(!n){e="Transfert interrompu sans données.";body=false;break;}
-        }
-        close();
-        if(fflush(out)||fsync(fileno(out)))body=false;
-        if(fclose(out))body=false;
-        out=nullptr;
-        if(exact&&total!=exact){e="Téléchargement incomplet.";body=false;}
-        if(!body&&e.empty())e="Erreur d'écriture sur la carte SD.";
-        ok=body;break;
+        if(status!=200){error=trf("Serveur HTTP : {0}. Vérifier le fichier publié sur GitHub.",{std::to_string(status)});break;}
+        if(exact&&transfer.total!=exact){error="Téléchargement incomplet.";break;}
+        if(!written){error="Erreur d'écriture sur la carte SD.";break;}
+        ok=true;break;
     }
-    if(out)fclose(out);
-    httpcExit();
     if(!ok)remove(path.c_str());
     return ok;
 }

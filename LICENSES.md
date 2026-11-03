@@ -14,6 +14,9 @@ Une licence de composant n'est pas remplacée par celle du lanceur.
 | libctru | Contributeurs libctru ; voir le texte amont | [Licence libctru](licenses/libctru-LICENSE.txt) |
 | Contributions communautaires SpriteCollab | Attribution-NonCommercial 4.0 International selon la politique du dépôt | [Texte CC BY-NC 4.0](licenses/SpriteCollab-CC-BY-NC-4.0.md) |
 
+| libcurl 8.23.0 | Daniel Stenberg et contributeurs ; licence curl | [Licence curl](licenses/curl-LICENSE.txt) |
+| mbedTLS 3.6.7 | Projet Mbed TLS ; Apache 2.0 (option retenue parmi les licences proposées) | [Licences mbedTLS](licenses/mbedTLS-LICENSE.txt) |
+
 ## Éléments graphiques
 
 Le sprite de Pikachu est repris du portage, qui crédite **CHUNSOFT** et
@@ -35,11 +38,18 @@ Les exécutables de devkitARM, makerom et bannertool ne sont pas redistribués d
 les sources. Le lanceur est construit avec ces outils ; les bibliothèques liées
 conservent les notices ci-dessus.
 
-`romfs/roots.bin` contient uniquement des certificats racines publics, extraits du
-bundle système de confiance utilisé lors de la compilation ; aucune clé privée
+`romfs/roots.pem` contient uniquement des certificats racines publics, extraits du
+bundle Mozilla publié par curl ; aucune clé privée
 ni aucun identifiant GitHub n'est inclus. `tools/update_roots.py` permet de
 reconstruire ce fichier à partir d'un bundle PEM de confiance.
 
 Required Notice: Copyright 2026 Dan Franza (https://github.com/DanFranza)
 
 Required Notice: Copyright 2026 JPTER78 (https://github.com/JPTER78/pokesurvivor)
+
+
+Les adaptations socket de curl reprennent les ajustements documentés par devkitPro
+dans [curl-8.4.0.patch](https://github.com/devkitPro/pacman-packages/blob/master/3ds/curl/curl-8.4.0.patch),
+portés sur curl 8.23.0. Les sources officielles, versions et empreintes de compilation
+sont fixées dans `tools/build_network.py`. L’adaptateur de temps et d’entropie
+utilise les services libctru de la console.

@@ -34,3 +34,11 @@ Required Notice: Copyright 2026 JPTER78 (https://github.com/JPTER78/pokesurvivor
   attestation de compatibilité du service TLS de la console.
 
 - Lecture JSON : picojson, Copyright Cybozu Labs, Inc. et Kazuho Oku, BSD 2 clauses. Le texte de licence est conservé en tête de `source/picojson.h` et dans `licenses/picojson-BSD-2-Clause.txt`.
+
+
+## Réseau HTTPS (1.2.2)
+
+libcurl 8.23.0 : Daniel Stenberg et contributeurs, licence curl.
+mbedTLS 3.6.7 : Mbed TLS project, utilisé sous Apache 2.0.
+Adaptations des sockets 3DS issues des ajustements devkitPro de curl.
+Les textes complets figurent dans `licenses/`.

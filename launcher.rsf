@@ -146,6 +146,7 @@ AccessControlInfo:
    - http:C
    - ptm:u
    - ssl:C
+   - soc:U
 
 SystemControlInfo:
   SaveDataSize: 0KB # Change if the app uses savedata

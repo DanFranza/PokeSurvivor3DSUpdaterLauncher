@@ -1,5 +1,14 @@
 # Historique
 
+## 1.2.2
+
+- Remplacement de HTTPC par libcurl 8.23.0 et mbedTLS 3.6.7 : la négociation TLS est intégrée au lanceur.
+- Permissions CIA pour les sockets, source d’entropie cryptographique et contrôle d’initialisation.
+- Vérification de la chaîne, du nom d’hôte et des dates conservée ; message pour vérifier l’horloge en cas de refus.
+- Même transfert borné, contrôle d’intégrité, annulation, cache et mises à jour CIA/3DSX.
+- Tests avec serveur HTTPS réel, certificats valides/invalides, redirections, limites et annulation.
+- Scripts de compilation des dépendances et licences inclus.
+
 ## 1.2.1
 
 - Ensemble HTTPS réduit de 128 à huit racines utiles à GitHub, pour limiter les ressources demandées au service de la console.

@@ -36,7 +36,7 @@ bool UpdateChecker::start(const std::string& source,const std::string& cache){
     collect();source_=source;cache_=cache;latest_.clear();cancel_.store(false);done_.store(false);
 #ifdef __3DS__
     s32 priority=0x30;svcGetThreadPriority(&priority,CUR_THREAD_HANDLE);
-    worker_=threadCreate(entry,this,64*1024,std::min(0x3f,int(priority)+2),-2,false);
+    worker_=threadCreate(entry,this,128*1024,std::min(0x3f,int(priority)+2),-2,false);
     if(!worker_){done_.store(true);return false;}
 #else
     try{worker_=std::thread([this]{run();});}catch(...){done_.store(true);return false;}

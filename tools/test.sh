@@ -7,9 +7,9 @@ mkdir -p build-tests
 build-tests/storage-tests build-tests/sd
 python3 -m unittest discover -s tests -p 'test_*.py'
 "${CXX_HOST:-c++}" -std=c++17 -Wall -Wextra -Werror -fsanitize=address,undefined \
-    -g -Itests/fakes -Isource tests/network_test.cpp source/network.cpp source/storage.cpp source/i18n.cpp \
-    -o build-tests/network-tests
-(cd build-tests && ./network-tests ../romfs/roots.bin)
+    -g -DNETWORK_TESTING -Isource tests/network_test.cpp source/network.cpp source/storage.cpp source/i18n.cpp \
+    -lcurl -o build-tests/network-tests
+python3 tests/run_network_test.py
 "${CXX_HOST:-c++}" -std=c++17 -Wall -Wextra -Werror -fsanitize=address,undefined \
     -g -Isource tests/update_source_test.cpp source/update_source.cpp source/storage.cpp source/game_format.cpp \
     -o build-tests/update-source-tests

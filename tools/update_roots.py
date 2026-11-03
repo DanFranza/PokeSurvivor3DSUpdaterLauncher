@@ -41,4 +41,5 @@ for block in blocks:
         parser.error('Certificat trop volumineux.')
     output += struct.pack('<I', len(der)) + der
 args.output.write_bytes(output)
+args.output.with_suffix('.pem').write_text(''.join(block + '\n' for block in blocks))
 print(f'{len(blocks)} certificats écrits dans {args.output}')

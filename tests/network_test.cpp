@@ -1,64 +1,43 @@
 #include "network.h"
-#include <3ds.h>
 #include <filesystem>
-#include <iostream>
-#include <cstring>
-#include <vector>
 #include <fstream>
+#include <iostream>
 #include <cstdlib>
-struct Response{u32 status;std::string body,location;bool timeout=false;int headerWaits=0,readWaits=0;bool partial=false;};
-static std::vector<Response> responses;
-static size_t requestIndex=0,position=0;
-static unsigned checks=0,opened=0,closed=0;
-static unsigned caCalls=0,caLimit=1000;
-static u64 ticks=0;static std::vector<u64> waits;
-#define CHECK(x) do{++checks;if(!(x)){std::cerr<<"Échec réseau ligne "<<__LINE__<<": "<<#x<<"\n";std::abort();}}while(0)
-Result httpcInit(u32){return 0;}void httpcExit(){}
-Result httpcOpenContext(httpcContext*c,int,const char*url,u32){CHECK(secureUrl(url));if(requestIndex>=responses.size())return -1;c->httphandle=requestIndex++;position=0;++opened;return 0;}
-Result httpcCloseContext(httpcContext*){++closed;return 0;}
-Result httpcAddTrustedRootCA(httpcContext*,const u8*,u32){return ++caCalls>caLimit?Result(0xD8A0A001):0;}
-Result httpcAddRequestHeaderField(httpcContext*,const char*,const char*){return 0;}
-Result httpcBeginRequest(httpcContext*){return 0;}
-Result httpcGetResponseStatusCodeTimeout(httpcContext*c,u32*s,u64 timeout){waits.push_back(timeout);auto&r=responses[c->httphandle];if(r.headerWaits>0){--r.headerWaits;ticks+=timeout;return Result(HTTPC_RESULTCODE_TIMEDOUT);}*s=r.status;return 0;}
-Result httpcGetResponseHeader(httpcContext*c,const char*,char*out,u32 n){auto s=responses[c->httphandle].location;if(s.size()>=n)return -1;strcpy(out,s.c_str());return 0;}
-Result httpcGetDownloadSizeState(httpcContext*c,u32*downloaded,u32*total){*downloaded=position;*total=responses[c->httphandle].body.size();return 0;}
-Result httpcReceiveDataTimeout(httpcContext*c,u8*out,u32 n,u64 timeout){waits.push_back(timeout);auto&r=responses[c->httphandle];if(r.timeout||r.readWaits>0){if(r.readWaits>0)--r.readWaits;ticks+=timeout;if(r.partial){size_t part=std::min(size_t(3),r.body.size()-position);memcpy(out,r.body.data()+position,part);position+=part;}return Result(HTTPC_RESULTCODE_TIMEDOUT);}size_t count=std::min(size_t(n),r.body.size()-position);memcpy(out,r.body.data()+position,count);position+=count;return position<r.body.size()?Result(HTTPC_RESULTCODE_DOWNLOADPENDING):0;}
-static bool download(const std::vector<Response>&r,uint64_t limit,uint64_t exact,bool cancel=false,const FetchOptions& options={}){responses=r;requestIndex=0;std::string error;bool ok=fetch("https://github.com/file","received.bin",limit,exact,error,[&](uint64_t,uint64_t){return !cancel;},options);CHECK(opened==closed);CHECK(ok||!exists("received.bin"));return ok;}
+static unsigned checks=0;
+#define CHECK(x) do{++checks;if(!(x)){std::cerr<<"Network check failed at "<<__LINE__<<": "<<#x<<"\n";std::abort();}}while(0)
 int main(int argc,char**argv){
-    std::filesystem::create_directories("romfs:");
-    std::ofstream roots("romfs:/roots.bin",std::ios::binary);const char dummy[]={1,0,0,0,42};roots.write(dummy,sizeof dummy);roots.close();
-    std::string body(100000,'A');body.back()='Z';
-    CHECK(download({{200,body,""}},body.size(),body.size()));CHECK(readText("received.bin").empty()); // readText is intentionally limited to manifest sizes.
-    std::ifstream file("received.bin",std::ios::binary);std::string data((std::istreambuf_iterator<char>(file)),{});CHECK(data==body);
-    CHECK(download({{302,"","https://release-assets.githubusercontent.com/file"},{200,body,""}},body.size(),body.size()));
-    CHECK(download({{307,"","/redirect"},{200,"abc",""}},3,3));
-    CHECK(!download({{302,"","http://evil.example/file"}},100,0));
-    CHECK(!download(std::vector<Response>(9,{302,"","https://github.com/loop"}),100,0));
-    CHECK(!download({{404,"not found",""}},100,0));
-    CHECK(!download({{200,body,""}},100,0));
-    CHECK(!download({{200,"short",""}},100,100));
-    CHECK(!download({{200,body,""}},body.size(),body.size(),true));
-    CHECK(!download({{200,"","",true}},100,0));
-    waits.clear();FetchOptions options;options.pollNs=100000000;options.budgetNs=500000000;options.nowNs=[](){return ticks;};ticks=0;
-    CHECK(download({{200,"abc","",false,2}},3,3,false,options));CHECK(ticks==200000000);
-    ticks=0;CHECK(download({{200,"abcdefghij","",false,0,2,true}},10,10,false,options));CHECK(readText("received.bin")=="abcdefghij");
-    ticks=0;options.budgetNs=300000000;CHECK(!download({{200,"","",true}},100,0,false,options));CHECK(ticks==300000000);
-    ticks=0;options.budgetNs=250000000;CHECK(!download({{200,"","",false,100}},100,0,false,options));CHECK(ticks==250000000);
-    ticks=0;options.budgetNs=1000000000;options.cancelled=[](){return ticks>=100000000;};CHECK(!download({{200,"","",false,100}},100,0,false,options));CHECK(ticks==100000000);
-    options.cancelled={};options.budgetNs=350000000;ticks=0;CHECK(!download({{302,"","https://github.com/next",false,2},{200,"abc","",false,2}},3,3,false,options));CHECK(ticks==350000000);
-    for(auto wait:waits)CHECK(wait<=100000000);
-    auto trustFailure=[&](const std::string& bundle,const std::string& detail){
-        std::ofstream file("romfs:/roots.bin",std::ios::binary);file.write(bundle.data(),bundle.size());file.close();
-        responses={{200,"abc",""}};requestIndex=0;caCalls=0;std::string error;
-        CHECK(!fetch("https://github.com/file","received.bin",3,3,error,[](uint64_t,uint64_t){return true;}));
-        CHECK(error.find(detail)!=std::string::npos);CHECK(opened==closed);CHECK(!exists("received.bin"));
+    CHECK(argc==2);
+    setenv("LAUNCHER_TEST_ROUTE",(std::string(":443:127.0.0.1:")+argv[1]).c_str(),1);
+    auto get=[&](const std::string& path,uint64_t limit,uint64_t exact,const FetchOptions& options=FetchOptions{}){
+        std::string error;
+        bool ok=fetch("https://localhost/"+path,"received.bin",limit,exact,error,[](uint64_t,uint64_t){return true;},options);
+        if(!ok)std::cerr<<path<<": "<<error<<"\n";CHECK(ok||!exists("received.bin"));return ok;
     };
-    trustFailure("","DER");trustFailure(std::string(1,'x'),"DER");
-    trustFailure(std::string("\x02\0\0\0x",5),"DER");
-    caLimit=0;trustFailure(std::string(dummy,sizeof dummy),"0xD8A0A001");
-    if(argc>1){
-        std::filesystem::copy_file(argv[1],"romfs:/roots.bin",std::filesystem::copy_options::overwrite_existing);
-        caLimit=8;caCalls=0;CHECK(download({{200,"abc",""}},3,3));CHECK(caCalls==8);
-    }
-    std::cout<<checks<<" vérifications réseau réussies.\n";
+    CHECK(get("ok",100000,65536));
+    CHECK(std::filesystem::file_size("received.bin")==65536);
+    std::ifstream file("received.bin",std::ios::binary);std::string data((std::istreambuf_iterator<char>(file)),{});
+    CHECK(data==std::string(65536,'A'));
+    CHECK(get("redirect",100000,65536));
+    CHECK(get("relative",100000,65536));
+    CHECK(!get("downgrade",100000,0));
+    CHECK(!get("loop",100000,0));
+    CHECK(!get("missing",100000,0));
+    CHECK(!get("ok",100,0));
+    CHECK(!get("ok",100000,65537));
+    CHECK(!get("truncated",100000,1000));
+    std::string error;
+    CHECK(!fetch("http://localhost/ok","received.bin",100000,0,error,[](uint64_t,uint64_t){return true;}));
+    CHECK(!fetch("https://wrong.test/ok","received.bin",100000,0,error,[](uint64_t,uint64_t){return true;}));
+    CHECK(error.find("date")!=std::string::npos);
+    FetchOptions budget;budget.budgetNs=150000000;budget.pollNs=20000000;
+    CHECK(!get("slow",100000,0,budget));
+    unsigned polls=0;FetchOptions cancel;cancel.cancelled=[&]{return ++polls>=5;};cancel.pollNs=20000000;
+    CHECK(!get("slow",100000,0,cancel));
+    CHECK(polls>=5);
+    CHECK(!fetch("https://localhost/ok","received.bin",100000,0,error,[](uint64_t,uint64_t){return false;}));
+    CHECK(!exists("received.bin"));
+    std::filesystem::rename("romfs:/roots.pem","romfs:/roots.saved");
+    CHECK(!get("ok",100000,0));
+    std::filesystem::rename("romfs:/roots.saved","romfs:/roots.pem");
+    std::cout<<checks<<" real HTTPS network checks passed.\n";
 }

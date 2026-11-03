@@ -1,4 +1,4 @@
-# PokéSurvivor — lanceur 3DS (1.2.0)
+# PokéSurvivor — lanceur 3DS (1.2.2)
 
 Petit lanceur indépendant du jeu, compilé en **3DSX et CIA**. Interface française,
 police Pixelify, panneaux bleus du portage, Pikachu animé, commandes tactiles et croix.
@@ -250,3 +250,47 @@ ou RomFS/DER pour un fichier absent ou invalide. Le chargeur refuse aussi un
 ensemble vide ou tronqué. Les tests imposent un plafond simulé de huit racines.
 Ce plafond de test n'est pas une limite matérielle documentée ; la réduction vise
 à éviter une saturation possible du service système. Validation réelle attendue.
+
+
+## Remplacement du transport HTTPS (1.2.2)
+
+Les éditions précédentes utilisaient le service HTTP système de la 3DS.
+Le correctif 1.2.1 a résolu le premier obstacle de chargement des certificats
+mais un échec de connexion 0xD8A0A030 a ensuite été signalé sur console.
+
+Le transport utilise désormais libcurl 8.23.0 et mbedTLS 3.6.7, compilés
+statiquement. Les sockets sont fournis par soc:U ; ssl:C est uniquement utilisé
+pour le générateur aléatoire cryptographique, et ses erreurs sont propagées.
+La négociation et la validation TLS sont effectuées par mbedTLS.
+Les huit racines publiques sont fournies en PEM dans le RomFS.
+Le nom du serveur, la chaîne et les dates sont vérifiés. Aucun mode sans
+vérification n’est proposé. TLS 1.2 est le minimum.
+
+L’interface multi de curl laisse le programme actualiser l’écran et annuler
+les transferts pendant les attentes. La limite de taille est appliquée avant
+chaque écriture. Seul un statut 200 écrit le binaire ; redirections HTTPS
+vérifiées à chaque saut, huit maximum. Chaque échec supprime le fichier partiel.
+Les transferts manuels ont un délai de connexion et une limite d’inactivité
+de quinze secondes. Le contrôle automatique garde son budget de trois secondes.
+Le résolveur DNS de soc:U est synchrone : son délai système peut dépasser ce
+budget. Il reste exécuté dans le thread de fond ; le menu continue de s’afficher.
+
+Compiler les dépendances avec `tools/build_network.py --directory /chemin/externe`,
+puis définir NETWORK_PREFIX=/chemin/externe/prefix pour le build du lanceur.
+Les archives officielles sont contrôlées par SHA-256. Le script inclut les
+adaptations sockets devkitPro et laisse les autres composants du SDK en place.
+
+Les tests réseau hôte utilisent un vrai serveur HTTPS local : certificat valide,
+mauvais nom, certificat absent, redirections relatives et absolues, retour HTTP
+refusé, boucle, 404, fichier trop grand, tronqué, annulation et budget dépassé.
+Ils utilisent le libcurl de l’hôte et ne remplacent pas une validation de soc:U
+et de mbedTLS sur une vraie console. Les tests de stockage, cache, langues et
+import CIA restent exécutés.
+
+
+Validation 1.2.2 dans Azahar : connexion GitHub via soc:U et mbedTLS,
+métadonnées du CIA récupérées, téléchargement réel du 3DSX de 48 335 352 octets
+et vérification de l’objet Git réussis. La validation sur matériel reste nécessaire.
+Les détails du dernier échec curl sont conservés localement dans
+`sd:/3ds/PokeSurvivorLauncher/network-error.txt` (code curl, erreur socket
+et diagnostic de bibliothèque).
