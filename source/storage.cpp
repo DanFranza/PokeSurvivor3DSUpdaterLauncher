@@ -53,7 +53,7 @@ bool Storage::finish(const std::string&j,std::string&e){
         if(exists(prev)){if(exists(game())||rename(prev.c_str(),game().c_str())){e="Impossible de récupérer le jeu précédent.";return false;}}
         if(remove(staged().c_str())){e="Impossible de nettoyer le téléchargement.";return false;}
     }else{
-        if(!valid3dsx(game())){e="Jeu installé absent ou invalide ; fichiers conservés.";return false;}
+        if(!valid_(game())){e="Jeu installé absent ou invalide ; fichiers conservés.";return false;}
         if(!writeText(game()+".version",next)){e="Écriture de version impossible.";return false;}
         if(exists(prev)){
             if(exists(backup())&&remove(backup().c_str())){e="Ancienne copie de secours inaccessible.";return false;}
@@ -64,16 +64,27 @@ bool Storage::finish(const std::string&j,std::string&e){
     }
     if(remove((game()+".journal").c_str())){e="Impossible de terminer le journal.";return false;}return true;
 }
-bool Storage::recover(std::string&e){if(busy())return finish(readText(game()+".journal"),e);if(exists(game()+".previous")){e="Copie de récupération sans journal : fichiers conservés.";return false;}return true;}
-bool Storage::install(const std::string&v,std::string&e){
-    if(!versionOk(v)||busy()||exists(game()+".previous")||!valid3dsx(staged())){e="Installation non prête ; fichiers conservés.";return false;}
-    if(!writeText(game()+".journal",v+"\n"+version())){e="Impossible de préparer le journal.";return false;}
+bool Storage::recover(std::string&e,const Import& import){
+    if(busy()){
+        if(import&&exists(staged())){if(!valid_(staged())){e="Installation non prête ; fichiers conservés.";return false;}if(!import(staged(),e))return false;return commitPrepared(e);}
+        return finish(readText(game()+".journal"),e);
+    }
+    if(exists(game()+".previous")){e="Copie de récupération sans journal : fichiers conservés.";return false;}return true;
+}
+bool Storage::commitPrepared(std::string&e){
+    if(exists(game())&&exists(game()+".previous")){e="Installation non prête ; fichiers conservés.";return false;}
     if(exists(game())&&rename(game().c_str(),(game()+".previous").c_str())){e="Impossible de déplacer le jeu actuel.";return false;}
     if(rename(staged().c_str(),game().c_str())){e="Installation interrompue ; relancer le lanceur.";return false;}
     return finish(readText(game()+".journal"),e);
 }
-bool Storage::restore(std::string&e,const std::function<bool(uint64_t,uint64_t)>& progress){
-    if(busy()||!valid3dsx(backup())){e="Aucune copie de secours utilisable.";return false;}
+bool Storage::install(const std::string&v,std::string&e,const Import& import){
+    if(!versionOk(v)||busy()||exists(game()+".previous")||!valid_(staged())){e="Installation non prête ; fichiers conservés.";return false;}
+    if(!writeText(game()+".journal",v+"\n"+version())){e="Impossible de préparer le journal.";return false;}
+    if(import&&!import(staged(),e))return false;
+    return commitPrepared(e);
+}
+bool Storage::restore(std::string&e,const std::function<bool(uint64_t,uint64_t)>& progress,const Import& import){
+    if(busy()||!valid_(backup())){e="Aucune copie de secours utilisable.";return false;}
     FILE*in=fopen(backup().c_str(),"rb");if(!in){e="Lecture du secours impossible.";return false;}
     FILE*out=fopen(partial().c_str(),"wb");if(!out){fclose(in);e="Écriture SD impossible.";return false;}
     struct stat s{};stat(backup().c_str(),&s);uint64_t count=0;std::vector<char> b(32768);size_t n;bool ok=true;Sha256 hash;
@@ -81,8 +92,8 @@ bool Storage::restore(std::string&e,const std::function<bool(uint64_t,uint64_t)>
     ok=!ferror(in)&&ok;fclose(in);ok=closeWrite(out)&&ok;
     std::string original;uint64_t size=0;ok=ok&&hashFile(backup(),original,size)&&original==hash.finish()&&size==count;
     auto expected=readText(backup()+".sha256");
-    if(expected.empty()||original!=expected){ok=false;e="Copie de secours altérée : restauration refusée.";}
+    if(ok&&(expected.empty()||original!=expected)){ok=false;e="Copie de secours altérée : restauration refusée.";}
     if(!ok){remove(partial().c_str());if(e.empty())e="Restauration annulée ou erreur de copie.";return false;}
     if(rename(partial().c_str(),staged().c_str())){e="Préparation de la restauration impossible.";return false;}
-    return install(backupVersion(),e);
+    return install(backupVersion(),e,import);
 }

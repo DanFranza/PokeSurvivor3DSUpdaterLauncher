@@ -18,6 +18,9 @@ int main(int argc,char**argv){
     auto malformed=json;malformed.replace(malformed.find("48334904"),8,"-1");CHECK(!parseGitHubFile(malformed,r,error));
     malformed=json;malformed.replace(malformed.find("https://raw.githubusercontent.com/"),34,"http://raw.githubusercontent.com/");CHECK(!parseGitHubFile(malformed,r,error));
     malformed=json;malformed.replace(malformed.find("\"type\": \"file\""),14,"\"type\": \"dir\"");CHECK(!parseGitHubFile(malformed,r,error));
-    if(argc==2){CHECK(parseGitHubFile(json,r,error));CHECK(verifyReleaseFile(argv[1],r));auto wrong=r;wrong.gitSha1[0]='0';CHECK(!verifyReleaseFile(argv[1],wrong));wrong=r;wrong.size++;CHECK(!verifyReleaseFile(argv[1],wrong));std::cout<<"Binaire GitHub réel : taille, en-tête et empreinte Git validés.\n";}
+    Release ciaRelease;CHECK(parseUpdateMetadata(readText("tests/fixtures/github-cia-file.json"),ciaRelease,error,GameFormat::CIA));CHECK(ciaRelease.format==GameFormat::CIA);CHECK(ciaRelease.size==48300992);CHECK(ciaRelease.version.rfind("cia-",0)==0);
+    CHECK(!parseGitHubFile(json,r,error,GameFormat::CIA));
+    if(argc>=2){CHECK(parseGitHubFile(json,r,error));CHECK(verifyReleaseFile(argv[1],r));auto wrong=r;wrong.gitSha1[0]='0';CHECK(!verifyReleaseFile(argv[1],wrong));wrong=r;wrong.size++;CHECK(!verifyReleaseFile(argv[1],wrong));std::cout<<"Binaire GitHub réel : taille, en-tête et empreinte Git validés.\n";}
+    if(argc==3){CHECK(verifyReleaseFile(argv[2],ciaRelease));std::cout<<"Binaire CIA GitHub réel vérifié.\n";}
     std::cout<<checks<<" vérifications de source réussies.\n";
 }

@@ -1,0 +1,18 @@
+{
+  "name": "pokesurvivor3ds.cia",
+  "path": "3ds/distribution/pokesurvivor3ds.cia",
+  "sha": "35462cba09756a2bf8c65105040cc05182dbfa36",
+  "size": 48300992,
+  "url": "https://api.github.com/repos/DanFranza/pokesurvivor3DS/contents/3ds/distribution/pokesurvivor3ds.cia?ref=port-3ds-danfranza",
+  "html_url": "https://github.com/DanFranza/pokesurvivor3DS/blob/port-3ds-danfranza/3ds/distribution/pokesurvivor3ds.cia",
+  "git_url": "https://api.github.com/repos/DanFranza/pokesurvivor3DS/git/blobs/35462cba09756a2bf8c65105040cc05182dbfa36",
+  "download_url": "https://raw.githubusercontent.com/DanFranza/pokesurvivor3DS/port-3ds-danfranza/3ds/distribution/pokesurvivor3ds.cia",
+  "type": "file",
+  "content": "",
+  "encoding": "none",
+  "_links": {
+    "self": "https://api.github.com/repos/DanFranza/pokesurvivor3DS/contents/3ds/distribution/pokesurvivor3ds.cia?ref=port-3ds-danfranza",
+    "git": "https://api.github.com/repos/DanFranza/pokesurvivor3DS/git/blobs/35462cba09756a2bf8c65105040cc05182dbfa36",
+    "html": "https://github.com/DanFranza/pokesurvivor3DS/blob/port-3ds-danfranza/3ds/distribution/pokesurvivor3ds.cia"
+  }
+}

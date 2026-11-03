@@ -4,7 +4,7 @@
 
 Une application indépendante pour jouer, télécharger les mises à jour et revenir
 à la version précédente du portage. Disponible en **3DSX** et **CIA**, avec une
-interface française inspirée du jeu : police pixel, panneaux bleus et Pikachu animé.
+interface en cinq langues inspirée du jeu : police pixel, panneaux bleus et Pikachu animé.
 
 Le jeu d'origine est **[PokéSurvivor de JPTER78](https://github.com/JPTER78/pokesurvivor)**.
 Le portage Nintendo 3DS est maintenu par **[Dan Franza](https://github.com/DanFranza/pokesurvivor3DS/tree/port-3ds-danfranza)**.
@@ -18,7 +18,7 @@ Ce dépôt contient uniquement le lanceur et son programme de mise à jour.
 
 - `pokesurvivor-launcher.3dsx` : ouverture depuis Homebrew Launcher.
 - `pokesurvivor-launcher.cia` : icône installable dans le menu HOME.
-- `PokeSurvivorLauncher-1.1.0.zip` : les deux formats, les sources et les licences.
+- `PokeSurvivorLauncher-1.2.0.zip` : les deux formats, les sources et les licences.
 
 ## Installer
 
@@ -37,7 +37,11 @@ Ce dépôt contient uniquement le lanceur et son programme de mise à jour.
 **Sur console, Luma3DS est requis.** Pour démarrer le jeu 3DSX depuis le CIA,
 Homebrew Launcher Loader doit aussi être installé sur la SD, ou le titre homebrew
 correspondant doit être configuré dans Luma. Le lanceur vérifie ce prérequis.
-Le CIA est celui du lanceur : le jeu reste un fichier 3DSX sur la carte SD.
+Le menu **Installer / Mettre à jour** propose **3DSX** ou **CIA** pour le jeu.
+Le CIA du jeu est téléchargé, vérifié et installé directement sur la console ;
+il apparaît ensuite dans le menu HOME. Le bouton **Jouer** ouvre le format choisi
+lors de la dernière installation réussie. Le chargeur homebrew est nécessaire
+uniquement pour jouer au format 3DSX.
 
 Le RomFS du lanceur est intégré : aucun dossier graphique supplémentaire à copier.
 
@@ -71,10 +75,22 @@ Si le jeu est absent, **Mettre à jour** devient **Installer le jeu**.
 Navigation à la croix ou au tactile ; A valide et START quitte. Les confirmations
 et l'annulation du téléchargement sont aussi accessibles au tactile.
 
-Le jeu est installé à `sd:/3ds/pokesurvivor3ds.3dsx`.
+Le 3DSX est installé à `sd:/3ds/pokesurvivor3ds.3dsx`. Le paquet CIA est conservé
+à `sd:/3ds/pokesurvivor3ds.cia` et installé sur SD via le service système.
+Chaque format dispose de son propre secours. Restaurer un CIA réinstalle son secours.
 **La sauvegarde `sd:/3ds/pokesurvivor3ds.sav` n'est jamais modifiée par le lanceur.**
 Les versions du portage peuvent la relire dans les deux sens ; une ancienne version
 n'affichera pas les nouveautés récentes.
+
+## Notification de mise à jour
+
+Après affichage du menu, une petite requête vérifie les métadonnées du format
+actif en arrière-plan. Si le binaire publié diffère de la version installée,
+**« Une mise à jour est disponible. »** apparaît. Le menu reste utilisable.
+La requête dispose d'un budget de trois secondes et son résultat est conservé
+quinze minutes ; hors ligne, aucun message d'erreur ne bloque le démarrage.
+Cette vérification nécessite une version connue, installée par le lanceur.
+L'action **Mettre à jour** effectue toujours une recherche à jour.
 
 ## D'où vient le jeu ?
 
@@ -86,7 +102,8 @@ Le lanceur télécharge le fichier déjà publié dans le dépôt de Dan Franza 
 
 Aucune release du jeu ni manifeste supplémentaire n'est nécessaire. Remplacer ce
 binaire dans la branche suffit pour que le lanceur détecte une nouvelle version.
-La version affichée, `3ds-…`, identifie le contenu du fichier publié.
+Le CIA est publié au même emplacement sous le nom `pokesurvivor3ds.cia`.
+La version affichée, `3ds-…` ou `cia-…`, identifie le contenu du fichier publié.
 
 Les connexions utilisent HTTPS avec vérification des certificats. La taille et
 l'identifiant de l'objet Git sont contrôlés avant l'installation ; les copies de
@@ -94,8 +111,8 @@ secours sont vérifiées avec SHA-256. Un téléchargement incomplet ou refusé 
 le jeu actuel intact. Un journal permet de récupérer une installation interrompue,
 sous réserve que la carte SD et son système de fichiers restent lisibles.
 
-Pour un jeu de 46 Mo, prévoir au moins environ 47 Mo libres en plus du jeu et du
-secours déjà présents. Ne pas retirer la SD pendant l'installation.
+Pour un jeu de 46 Mo, prévoir environ 47 Mo libres pour le 3DSX, ou 93 Mo
+pour le téléchargement et l’installation du CIA, en plus des fichiers déjà présents. Ne pas retirer la SD pendant l'installation.
 
 ## Configuration et mise à niveau du lanceur
 

@@ -19,19 +19,19 @@ class TranslationTests(unittest.TestCase):
 
     def test_all_static_errors_have_translations(self):
         keys = {row[0] for row in translations.catalog()}
-        for name in ['storage.cpp', 'update_source.cpp', 'network.cpp', 'launch.cpp', 'main.cpp']:
+        for name in ['storage.cpp', 'update_source.cpp', 'network.cpp', 'launch.cpp', 'cia.cpp', 'main.cpp']:
             text = (ROOT / 'source' / name).read_text()
-            for literal in re.findall(r'\be\s*=\s*("(?:\\.|[^"\\])*")', text):
+            for literal in re.findall(r'\b(?:e|error)\s*=\s*("(?:\\.|[^"\\])*")', text):
                 value = json.loads(literal)
                 with self.subTest(file=name, message=value):
                     self.assertIn(value, keys)
 
     def test_ui_keys_and_network_stages_have_translations(self):
         keys = {row[0] for row in translations.catalog()}
-        technical = {'POKÉ', 'SURVIVOR', 'X', '▶', '★'}
-        for name in ['main.cpp', 'network.cpp', 'launch.cpp']:
+        technical = {'POKÉ', 'SURVIVOR', 'X', '▶', '★', 'CIA', '3DSX'}
+        for name in ['main.cpp', 'network.cpp', 'launch.cpp', 'cia.cpp']:
             text = (ROOT / 'source' / name).read_text()
-            for literal in re.findall(r'\b(?:dialog|frame|progress|text|tr|trf|failure)\s*\(\s*("(?:\\.|[^"\\])*")', text):
+            for literal in re.findall(r'\b(?:dialog|frame|progress|text|tr|trf|failure|failed)\s*\(\s*("(?:\\.|[^"\\])*")', text):
                 value = json.loads(literal)
                 if value in technical:
                     continue

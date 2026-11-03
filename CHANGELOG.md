@@ -1,5 +1,13 @@
 # Historique
 
+## 1.2.0
+
+- Notification de changement du jeu en arrière-plan, budget de trois secondes et cache de quinze minutes.
+- Choix 3DSX ou CIA ; téléchargement et installation native du CIA du jeu.
+- Lancement du format installé, secours indépendants et restauration CIA avec reprise après interruption.
+- Nouveaux messages traduits dans les cinq langues, tests réseau et installation étendus.
+
+
 ## 1.1.0 — 3 novembre 2026
 
 - Menu de langue sur l’écran inférieur, affiché au premier démarrage et accessible au tactile, à la croix ou avec X.

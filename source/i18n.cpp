@@ -1,9 +1,10 @@
 #include "i18n.h"
 #include "storage.h"
 #include <cstring>
+#include <atomic>
 
 namespace {
-Language selectedLanguage = Language::French;
+std::atomic<Language> selectedLanguage{Language::French};
 const char* codes[LANGUAGE_COUNT] = {"fr", "en", "es", "it", "pt"};
 const char* names[LANGUAGE_COUNT] = {"Français", "English", "Español", "Italiano", "Português"};
 const char* messages[][LANGUAGE_COUNT] = {
@@ -15,8 +16,8 @@ int index(Language language) {
 }
 }
 
-Language currentLanguage() { return selectedLanguage; }
-void setLanguage(Language language) { selectedLanguage = static_cast<Language>(index(language)); }
+Language currentLanguage() { return selectedLanguage.load(); }
+void setLanguage(Language language) { selectedLanguage.store(static_cast<Language>(index(language))); }
 const char* languageCode(Language language) { return codes[index(language)]; }
 const char* languageName(Language language) { return names[index(language)]; }
 bool parseLanguageCode(const std::string& text, Language& language) {
@@ -29,7 +30,7 @@ bool parseLanguageCode(const std::string& text, Language& language) {
 }
 const char* tr(const char* message) {
     for (const auto& row : messages) {
-        if (strcmp(row[0], message) == 0) return row[index(selectedLanguage)];
+        if (strcmp(row[0], message) == 0) return row[index(selectedLanguage.load())];
     }
     return message;
 }

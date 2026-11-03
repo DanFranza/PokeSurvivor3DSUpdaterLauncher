@@ -7,6 +7,7 @@
 #include <vector>
 
 const char* defaultUpdateUrl(){return "https://api.github.com/repos/DanFranza/pokesurvivor3DS/contents/3ds/distribution/pokesurvivor3ds.3dsx?ref=port-3ds-danfranza";}
+const char* ciaUpdateUrl(){return "https://api.github.com/repos/DanFranza/pokesurvivor3DS/contents/3ds/distribution/pokesurvivor3ds.cia?ref=port-3ds-danfranza";}
 std::string resolveUpdateSource(const std::string&config){
     if(config.empty())return defaultUpdateUrl();
     const std::string prefix="manifest_url=";
@@ -15,26 +16,33 @@ std::string resolveUpdateSource(const std::string&config){
     if(url=="https://github.com/DanFranza/PokeSurvivor3DSUpdaterLauncher/releases/latest/download/pokesurvivor-update.ini")return defaultUpdateUrl();
     return url;
 }
-bool parseGitHubFile(const std::string&json,Release&r,std::string&e){
+bool parseGitHubFile(const std::string&json,Release&r,std::string&e,GameFormat format){
     try{
         picojson::value doc;auto err=picojson::parse(doc,json);
         if(!err.empty()||!doc.is<picojson::object>()){e="Réponse GitHub illisible.";return false;}
         auto stringValue=[&](const char*key){auto&v=doc.get(key);return v.is<std::string>()?v.get<std::string>():std::string();};
         auto sha=stringValue("sha"),url=stringValue("download_url");
-        if(stringValue("type")!="file"||stringValue("path")!="3ds/distribution/pokesurvivor3ds.3dsx"||sha.size()!=40||!std::all_of(sha.begin(),sha.end(),[](char c){return(c>='0'&&c<='9')||(c>='a'&&c<='f');})||!secureUrl(url)||url.compare(0,34,"https://raw.githubusercontent.com/")!=0||!doc.get("size").is<double>()){
+        if(stringValue("type")!="file"||stringValue("path")!=(format==GameFormat::CIA?"3ds/distribution/pokesurvivor3ds.cia":"3ds/distribution/pokesurvivor3ds.3dsx")||sha.size()!=40||!std::all_of(sha.begin(),sha.end(),[](char c){return(c>='0'&&c<='9')||(c>='a'&&c<='f');})||!secureUrl(url)||url.compare(0,34,"https://raw.githubusercontent.com/")!=0||!doc.get("size").is<double>()){
             e="Informations du fichier GitHub invalides.";return false;
         }
         double size=doc.get("size").get<double>();
         if(!std::isfinite(size)||size<32||size>512.0*1024*1024||std::floor(size)!=size){e="Taille du jeu GitHub invalide.";return false;}
-        r={"3ds-"+sha.substr(0,12),url,"",uint64_t(size),sha};return true;
+        r={std::string(format==GameFormat::CIA?"cia-":"3ds-")+sha.substr(0,12),url,"",uint64_t(size),sha,format};return true;
     }catch(const std::exception&){e="Réponse GitHub invalide.";return false;}
 }
 bool verifyReleaseFile(const std::string&path,const Release&r){
-    if(!valid3dsx(path))return false;
+    if(!(r.format==GameFormat::CIA?validGameCia(path):valid3dsx(path)))return false;
     if(r.gitSha1.empty()){std::string hash;uint64_t size=0;return hashFile(path,hash,size)&&size==r.size&&hash==r.sha256;}
     FILE*f=fopen(path.c_str(),"rb");if(!f)return false;
     Sha1 hash;std::string prefix="blob "+std::to_string(r.size);hash.add(prefix.c_str(),prefix.size()+1);
     std::vector<char> buffer(32768);uint64_t size=0;size_t n;
     while((n=fread(buffer.data(),1,buffer.size(),f))){hash.add(buffer.data(),n);size+=n;}
     bool ok=!ferror(f);fclose(f);return ok&&size==r.size&&hash.finish()==r.gitSha1;
+}
+
+bool parseUpdateMetadata(const std::string& metadata,Release& release,std::string& error,GameFormat format){
+    auto first=metadata.find_first_not_of(" \t\r\n");
+    bool ok=first!=std::string::npos&&metadata[first]=='{'?parseGitHubFile(metadata,release,error,format):parseRelease(metadata,release,error);
+    if(ok)release.format=format;
+    return ok;
 }

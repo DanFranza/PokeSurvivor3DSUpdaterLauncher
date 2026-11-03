@@ -6,6 +6,10 @@
 #include "update_source.h"
 #include "i18n.h"
 #include "version.h"
+#include "update_check.h"
+#include "cia.h"
+#include <memory>
+#include <ctime>
 #include <sys/stat.h>
 #include <cstdio>
 #include <cmath>
@@ -18,7 +22,25 @@ static C2D_TextBuf textBuf;
 static C2D_Font font;
 static C2D_SpriteSheet mascot;
 static Storage store("sdmc:/3ds");
-static bool healthy=true;
+static Storage ciaStore("sdmc:/3ds","pokesurvivor3ds.cia",validGameCia);
+static bool healthy=true,ciaHealthy=true,ciaPresent=false;
+static GameFormat activeFormat=GameFormat::ThreeDSX,checkFormat=GameFormat::ThreeDSX;
+static std::unique_ptr<UpdateChecker> startupCheck;
+static bool startupStarted=false;
+static int pendingAction=-1;
+static std::string displayedVersion;
+static const char* formatFile="sdmc:/3ds/PokeSurvivorLauncher/format.txt";
+static Storage& currentStorage(){return activeFormat==GameFormat::CIA?ciaStore:store;}
+static bool hasGame(){return activeFormat==GameFormat::CIA?ciaPresent:exists(store.game());}
+static bool currentHealthy(){return activeFormat==GameFormat::CIA?ciaHealthy:healthy;}
+static std::string checkCache(GameFormat format){return std::string("sdmc:/3ds/PokeSurvivorLauncher/update-check-")+gameFormatCode(format)+".ini";}
+static bool backgroundQuery(const std::string& source,const std::function<bool()>& cancelled,std::string& version){
+    const std::string temporary="sdmc:/3ds/PokeSurvivorLauncher/startup-metadata.tmp";
+    FetchOptions options;options.budgetNs=3000000000ull;options.pollNs=100000000ull;options.cancelled=cancelled;
+    std::string ignored;bool ok=fetch(source,temporary,8192,0,ignored,[&](uint64_t,uint64_t){return !cancelled();},options);
+    if(ok&&!cancelled()){Release release;ok=parseUpdateMetadata(readText(temporary),release,ignored,source==ciaUpdateUrl()?GameFormat::CIA:GameFormat::ThreeDSX);if(ok)version=release.version;}
+    remove(temporary.c_str());return ok&&!cancelled();
+}
 static int selected=0;
 static std::string notice="Prêt pour l'aventure.";
 static const char* languageFile="sdmc:/3ds/PokeSurvivorLauncher/language.txt";
@@ -67,8 +89,10 @@ static void drawTop(){
     }
     panel(16,187,368,39,rgb(94,127,188));
     text("VERSION INSTALLÉE",28,193,.45f,rgb(159,184,229));
-    std::string v=exists(store.game())?store.version():"Jeu non installé";
+    displayedVersion=currentStorage().version();
+    std::string v=hasGame()?displayedVersion:"Jeu non installé";
     text(v,28,205,v.size()>30?.45f:.40f,white());
+    text(activeFormat==GameFormat::CIA?"CIA":"3DSX",28,229,.45f,rgb(159,184,229));
     text(trf("Lanceur {0}",{LAUNCHER_VERSION}),320,229,.4f,rgb(159,184,229),true);
 }
 static void frame(const std::string&heading="",const std::string&body="",float progress=-1,bool confirm=false){
@@ -77,17 +101,20 @@ static void frame(const std::string&heading="",const std::string&body="",float p
         panel(12,5,296,26,selected==3?gold():rgb(94,127,188));
         text(trf("Langue : {0}",{languageName(currentLanguage())}),155,11,.48f,white(),true);
         text("X",290,11,.48f,gold(),true);
-        const char*labels[]={"Jouer",exists(store.game())?"Mettre à jour":"Installer le jeu","Restaurer la version précédente"};
+        const char*labels[]={"Jouer",hasGame()?"Mettre à jour":"Installer le jeu","Restaurer la version précédente"};
         const char*desc[]={"Reprendre l'aventure","Vérifier les versions sur GitHub","Conserver la sauvegarde actuelle"};
         for(int i=0;i<3;i++){
-            bool enabled=healthy&&(i==1||exists(i==0?store.game():store.backup()));
+            bool enabled=i==1||(currentHealthy()&&(i==0?hasGame():exists(currentStorage().backup())));
             float y=39+i*52;u32 color=!enabled?rgb(88,101,128):i==selected?gold():rgb(112,149,220);
             panel(12,y,296,46,color);icon(i,24,y+10,color);
             text(labels[i],62,y+7,i==2?.52f:.56f,color);
             text(desc[i],62,y+28,.45f,enabled?rgb(163,191,229):rgb(88,101,128));
             if(i==selected)text("▶",287,y+15,.40f,color,true);
         }
-        text(notice,14,196,.45f,white(),false,292);
+        bool available=startupCheck&&activeFormat==checkFormat&&hasGameUpdate(displayedVersion,startupCheck->latestVersion());
+        const char* waiting[]={"Démarrage du jeu...","Préparation de la mise à jour...","Préparation de la restauration...","","Fermeture..."};
+        std::string message=pendingAction>=0?waiting[pendingAction]:available?"Une mise à jour est disponible.":notice;
+        text(message,14,196,.45f,available?gold():white(),false,292);
         text("Croix : choix  A : valider  START : quitter",160,224,.45f,rgb(159,184,229),true);
     }else{
         panel(10,15,300,208,gold());text(heading,24,29,.51f,gold());text(body,24,64,.40f,white(),false,270);
@@ -150,38 +177,100 @@ static bool progress(const std::string&title,uint64_t done,uint64_t total){
     if(hidKeysDown()&KEY_TOUCH){touchPosition p;hidTouchRead(&p);if(p.py>=193&&p.py<217&&p.px>=24&&p.px<296)return false;}
     return true;
 }
-static bool spaceFor(uint64_t bytes,std::string&e){FS_ArchiveResource s{};Result r=FSUSER_GetSdmcArchiveResource(&s);if(R_FAILED(r)){e="Impossible de vérifier l'espace libre.";return false;}uint64_t free=uint64_t(s.clusterSize)*s.freeClusters;if(free<bytes+1024*1024){e="Espace SD insuffisant : prévoir la taille du jeu + 1 Mo libre.";return false;}return true;}
+static bool spaceFor(uint64_t bytes,std::string&e){FS_ArchiveResource s{};Result r=FSUSER_GetSdmcArchiveResource(&s);if(R_FAILED(r)){e="Impossible de vérifier l'espace libre.";return false;}uint64_t free=uint64_t(s.clusterSize)*s.freeClusters;if(free<bytes+1024*1024){e="Espace SD insuffisant pour le téléchargement et l’installation.";return false;}return true;}
 static std::string manifestUrl(){
     auto previous=readText(config);auto url=resolveUpdateSource(previous);
     if(!url.empty()&&previous!=std::string("manifest_url=")+url+"\n")
         writeText(config,std::string("manifest_url=")+url+"\n");
     return url;
 }
+static bool importCia(const std::string& path,std::string& error){
+    return installGameCia(path,error,[](uint64_t a,uint64_t b){return progress("Installation du CIA",a,b);});
+}
+static bool formatMenu(GameFormat& format){
+    int choice=activeFormat==GameFormat::CIA?1:0;
+    while(aptMainLoop()){
+        hidScanInput();u32 down=hidKeysDown();if(down&(KEY_B|KEY_START))return false;
+        if(down&(KEY_DUP|KEY_DDOWN))choice=1-choice;
+        bool accept=down&KEY_A;
+        if(down&KEY_TOUCH){touchPosition p;hidTouchRead(&p);for(int i=0;i<2;i++)if(p.px>=18&&p.px<302&&p.py>=54+i*62&&p.py<106+i*62){choice=i;accept=true;}}
+        C3D_FrameBegin(C3D_FRAME_SYNCDRAW);C2D_TextBufClear(textBuf);begin(top);drawTop();begin(bottom);background(320);
+        text("Format du jeu",160,15,.6f,gold(),true);
+        for(int i=0;i<2;i++){
+            float y=54+i*62;panel(18,y,284,52,i==choice?gold():rgb(112,149,220));
+            text(i==0?"3DSX":"CIA",38,y+7,.7f,i==choice?gold():white());
+            text(i==0?"Fichier pour Homebrew Launcher":"Installation dans le menu HOME",38,y+33,.45f,white());
+        }
+        text("A Valider • B Retour",160,215,.45f,rgb(159,184,229),true);C3D_FrameEnd(0);
+        if(accept){format=choice?GameFormat::CIA:GameFormat::ThreeDSX;return true;}
+    }
+    return false;
+}
+static void activateFormat(GameFormat format){
+    activeFormat=format;ciaPresent=gameCiaInstalled();
+    if(!writeText(formatFile,gameFormatCode(format)))dialog("Format non enregistré","Impossible d'enregistrer le format sur la carte SD.");
+    startupCheck->clearResult();startupStarted=false;
+}
+static void rememberVersion(GameFormat format,const std::string& source,const std::string& version){
+    auto cache=makeUpdateCache(source,std::time(nullptr),version);if(!cache.empty())writeText(checkCache(format),cache);
+}
 static void update(){
-    std::string e;auto url=manifestUrl();if(!secureUrl(url)){dialog("Configuration invalide","Vérifier manifest_url dans /3ds/PokeSurvivorLauncher/config.ini.");return;}
+    GameFormat format;if(!formatMenu(format))return;
+    Storage& target=format==GameFormat::CIA?ciaStore:store;std::string e;
+    auto importer=format==GameFormat::CIA?Storage::Import(importCia):Storage::Import();
+    if(format==GameFormat::CIA&&target.busy()){
+        if(!dialog("Installation CIA interrompue","Reprendre l'installation du CIA vérifié ?",true))return;
+        ciaHealthy=target.recover(e,importer);
+        if(!ciaHealthy){dialog("Récupération CIA impossible",e);return;}
+        activateFormat(format);dialog("Installation terminée","Le jeu CIA est installé dans le menu HOME.");return;
+    }
+    if(!(format==GameFormat::CIA?ciaHealthy:healthy)){dialog("Erreur de récupération","Installation non prête ; fichiers conservés.");return;}
+    auto url=format==GameFormat::CIA?std::string(ciaUpdateUrl()):manifestUrl();
+    if(!secureUrl(url)){dialog("Configuration invalide","Vérifier manifest_url dans /3ds/PokeSurvivorLauncher/config.ini.");return;}
     std::string manifest="sdmc:/3ds/PokeSurvivorLauncher/update.ini";
     frame("Recherche d'une version","Connexion HTTPS à GitHub...");
     if(!fetch(url,manifest,8192,0,e,[](uint64_t a,uint64_t b){return progress("Recherche d'une version",a,b);})){dialog("Mise à jour impossible",e);return;}
-    Release r;auto metadata=readText(manifest);
-    bool parsed=metadata.find_first_not_of(" \t\r\n")!=std::string::npos&&metadata[metadata.find_first_not_of(" \t\r\n")]=='{'?parseGitHubFile(metadata,r,e):parseRelease(metadata,r,e);
-    if(!parsed){dialog("Manifeste refusé",e);return;}
-    if(exists(store.game())&&store.version()==r.version){
+    Release r;if(!parseUpdateMetadata(readText(manifest),r,e,format)){dialog("Manifeste refusé",e);return;}
+    if(exists(target.game())&&target.version()==r.version){
         frame("Vérification du jeu","Contrôle de la version installée...");
-        if(verifyReleaseFile(store.game(),r)){
+        if(verifyReleaseFile(target.game(),r)){
+            if(format==GameFormat::CIA&&!gameCiaInstalled()){
+                if(!spaceFor(r.size,e)||!importCia(target.game(),e)){dialog("Installation CIA impossible",e);return;}
+            }
+            activateFormat(format);rememberVersion(format,url,r.version);
             dialog("Jeu à jour",trf("La version {0} est déjà installée.",{r.version}));return;
         }
     }
     char sizeLabel[48];snprintf(sizeLabel,sizeof sizeLabel,tr("%.1f Mo"),r.size/1048576.);
     if(!dialog("Nouvelle version",trf("{0} • {1}\nInstaller cette version ?\nLa sauvegarde sera conservée.",{r.version,sizeLabel}),true))return;
-    if(!spaceFor(r.size,e)){dialog("Carte SD",e);return;}
-    if(!fetch(r.url,store.partial(),r.size,r.size,e,[](uint64_t a,uint64_t b){return progress("Téléchargement du jeu",a,b);})){dialog("Téléchargement arrêté",e);return;}
+    if(!spaceFor(r.size*(format==GameFormat::CIA?2:1),e)){dialog("Carte SD",e);return;}
+    if(!fetch(r.url,target.partial(),r.size,r.size,e,[](uint64_t a,uint64_t b){return progress("Téléchargement du jeu",a,b);})){dialog("Téléchargement arrêté",e);return;}
     frame("Vérification","Contrôle de l’intégrité du jeu...");
-    if(!verifyReleaseFile(store.partial(),r)){remove(store.partial().c_str());dialog("Fichier refusé","Intégrité incorrecte. Le jeu installé est conservé.");return;}
-    if(rename(store.partial().c_str(),store.staged().c_str())){dialog("Erreur SD","Impossible de préparer le fichier téléchargé.");return;}
+    if(!verifyReleaseFile(target.partial(),r)){remove(target.partial().c_str());dialog("Fichier refusé","Intégrité incorrecte. Le jeu installé est conservé.");return;}
+    if(rename(target.partial().c_str(),target.staged().c_str())){dialog("Erreur SD","Impossible de préparer le fichier téléchargé.");return;}
     frame("Installation","Ne pas éteindre la console.\nConservation de la version précédente...");
-    if(!store.install(r.version,e)){healthy=store.recover(e);dialog("Installation interrompue",e.empty()?"État récupéré. Réessayer la mise à jour.":e);return;}
-    selected=0;notice="Mise à jour installée. À toi de jouer !";dialog("Mise à jour terminée",trf("Version {0} installée.\nLa sauvegarde est conservée.",{r.version}));
+    if(!target.install(r.version,e,importer)){
+        std::string recovery;bool recovered=target.recover(recovery);
+        if(format==GameFormat::CIA){ciaHealthy=recovered;ciaPresent=gameCiaInstalled();}else healthy=recovered;
+        dialog("Installation interrompue",e.empty()?recovery:e);return;
+    }
+    activateFormat(format);rememberVersion(format,url,r.version);selected=0;notice="Mise à jour installée. À toi de jouer !";
+    dialog("Mise à jour terminée",trf("Version {0} installée.\nLa sauvegarde est conservée.",{r.version}));
 }
+static void restoreGame(){
+    Storage& target=currentStorage();if(!exists(target.backup()))return;std::string e;
+    if(!dialog("Restaurer le jeu",trf("Revenir à la version {0} ?\nProgression conservée. Les nouveautés récentes seront indisponibles.",{tr(target.backupVersion())}),true))return;
+    struct stat s{};if(stat(target.backup().c_str(),&s)||!spaceFor(uint64_t(s.st_size)*(activeFormat==GameFormat::CIA?2:1),e)){dialog("Restauration impossible",e);return;}
+    auto importer=activeFormat==GameFormat::CIA?Storage::Import(importCia):Storage::Import();
+    if(target.restore(e,[](uint64_t a,uint64_t b){return progress("Copie de l'ancienne version",a,b);},importer)){
+        notice="Version précédente restaurée.";selected=0;ciaPresent=gameCiaInstalled();startupCheck->clearResult();startupStarted=false;
+        dialog("Restauration terminée","Votre sauvegarde a été conservée.");
+    }else{
+        std::string recovery;bool recovered=target.recover(recovery);if(activeFormat==GameFormat::CIA){ciaHealthy=recovered;ciaPresent=gameCiaInstalled();}else healthy=recovered;
+        dialog("Restauration interrompue",e.empty()?recovery:e);
+    }
+}
+
 int main(){
     gfxInitDefault();romfsInit();C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);C2D_Init(C2D_DEFAULT_MAX_OBJECTS);C2D_Prepare();
     top=C2D_CreateScreenTarget(GFX_TOP,GFX_LEFT);bottom=C2D_CreateScreenTarget(GFX_BOTTOM,GFX_LEFT);
@@ -189,29 +278,45 @@ int main(){
     mkdir("sdmc:/3ds",0777);mkdir("sdmc:/3ds/PokeSurvivorLauncher",0777);
     if(!loadLanguagePreference(languageFile))languageMenu();
     if(!exists(config))writeText(config,std::string("manifest_url=")+defaultUpdateUrl()+"\n");
-    std::string e;healthy=store.recover(e);if(!exists(store.game()))selected=1;if(!healthy){notice="Récupération nécessaire.";dialog("Erreur de récupération",e);}
-    // Only abandoned downloads are removed. Transaction files are handled above.
+    ciaPresent=gameCiaInstalled();if(!parseGameFormat(readText(formatFile),activeFormat)&&!exists(store.game())&&ciaPresent)activeFormat=GameFormat::CIA;
+    std::string e;healthy=store.recover(e);if(!healthy)dialog("Erreur de récupération",e);
+    e.clear();
+    if(ciaStore.busy()&&exists(ciaStore.staged())){
+        if(dialog("Installation CIA interrompue","Reprendre l'installation du CIA vérifié ?",true))ciaHealthy=ciaStore.recover(e,importCia);else ciaHealthy=false;
+    }else ciaHealthy=ciaStore.recover(e);
+    if(!ciaHealthy&&!e.empty())dialog("Récupération CIA impossible",e);
+    ciaPresent=gameCiaInstalled();if(!hasGame())selected=1;
     if(healthy){remove(store.partial().c_str());remove(store.staged().c_str());}
+    if(ciaHealthy){remove(ciaStore.partial().c_str());remove(ciaStore.staged().c_str());}
+    startupCheck.reset(new UpdateChecker(backgroundQuery));
     while(aptMainLoop()){
-        hidScanInput();u32 down=hidKeysDown();if(down&KEY_START)break;
-        if(down&KEY_X){languageMenu();continue;}
-        if(down&KEY_DUP)selected=(selected+3)%4;
-        if(down&KEY_DDOWN)selected=(selected+1)%4;
-        bool activate=down&KEY_A;
-        if(down&KEY_TOUCH){touchPosition p;hidTouchRead(&p);for(int i=0;i<3;i++)if(p.px>=12&&p.px<308&&p.py>=39+i*52&&p.py<85+i*52){selected=i;activate=true;}}
-        if(down&KEY_TOUCH){touchPosition p;hidTouchRead(&p);if(p.px>=12&&p.px<308&&p.py>=5&&p.py<31){selected=3;activate=true;}}
-        frame();if(!activate)continue;
-        if(selected==3){languageMenu();continue;}
-        if(!healthy)continue;
-        if(selected==0&&exists(store.game())){if(!valid3dsx(store.game())){dialog("Jeu invalide","Réinstaller le jeu avec Mettre à jour.");continue;}if(prepareLaunch(store.game(),e))break;dialog("Lancement impossible",e);}
-        else if(selected==1)update();
-        else if(selected==2&&exists(store.backup())){
-            if(!dialog("Restaurer le jeu", trf("Revenir à la version {0} ?\nProgression conservée. Les nouveautés récentes seront indisponibles.",{tr(store.backupVersion())}),true))continue;
-            struct stat s{};if(stat(store.backup().c_str(),&s)||!spaceFor(s.st_size,e)){dialog("Restauration impossible",e);continue;}
-            if(store.restore(e,[](uint64_t a,uint64_t b){return progress("Copie de l'ancienne version",a,b);})){notice="Version précédente restaurée.";selected=0;dialog("Restauration terminée","Votre sauvegarde a été conservée.");}
-            else{healthy=store.recover(e);dialog("Restauration interrompue",e);}
+        hidScanInput();u32 down=hidKeysDown();if(down&KEY_START){pendingAction=4;startupCheck->cancel();}
+        if(pendingAction!=4){
+            if(down&KEY_X){pendingAction=-1;languageMenu();continue;}
+            if(down&KEY_DUP)selected=(selected+3)%4;
+            if(down&KEY_DDOWN)selected=(selected+1)%4;
+            bool activate=down&KEY_A;
+            if(down&KEY_TOUCH){touchPosition p;hidTouchRead(&p);for(int i=0;i<3;i++)if(p.px>=12&&p.px<308&&p.py>=39+i*52&&p.py<85+i*52){selected=i;activate=true;}if(p.px>=12&&p.px<308&&p.py>=5&&p.py<31){selected=3;activate=true;}}
+            if(activate){
+                if(selected==3){pendingAction=-1;languageMenu();continue;}
+                if(selected==1||(currentHealthy()&&(selected==0?hasGame():exists(currentStorage().backup())))){pendingAction=selected;startupCheck->cancel();}
+            }
         }
+        frame();
+        if(!startupStarted&&pendingAction<0){
+            startupStarted=true;checkFormat=activeFormat;
+            if(currentHealthy()&&hasGame()&&displayedVersion!="inconnue")startupCheck->start(activeFormat==GameFormat::CIA?std::string(ciaUpdateUrl()):manifestUrl(),checkCache(activeFormat));
+        }
+        if(pendingAction<0){startupCheck->collect();continue;}
+        if(startupCheck->running())continue;
+        startupCheck->collect();int action=pendingAction;pendingAction=-1;
+        if(action==4)break;
+        if(action==0){
+            if(activeFormat==GameFormat::CIA){if(prepareGameCiaLaunch(e))break;dialog("Lancement impossible",e);}
+            else{if(!valid3dsx(store.game())){dialog("Jeu invalide","Réinstaller le jeu avec Mettre à jour.");continue;}if(prepareLaunch(store.game(),e))break;dialog("Lancement impossible",e);}
+        }else if(action==1)update();else if(action==2)restoreGame();
     }
+    startupCheck.reset();
     if(mascot)C2D_SpriteSheetFree(mascot);
     if(font)C2D_FontFree(font);
     C2D_TextBufDelete(textBuf);C2D_Fini();C3D_Fini();romfsExit();gfxExit();return 0;

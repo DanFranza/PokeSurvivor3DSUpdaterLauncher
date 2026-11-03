@@ -1,4 +1,4 @@
-# PokéSurvivor — lanceur 3DS (1.1.0)
+# PokéSurvivor — lanceur 3DS (1.2.0)
 
 Petit lanceur indépendant du jeu, compilé en **3DSX et CIA**. Interface française,
 police Pixelify, panneaux bleus du portage, Pikachu animé, commandes tactiles et croix.
@@ -14,7 +14,7 @@ Console équipée de Luma3DS avec son chargeur homebrew `hb:ldr`.
   Pour lancer le jeu 3DSX, le titre Homebrew Launcher Loader doit également être
   installé sur SD (ou le titre homebrew personnalisé configuré dans Luma).
   Le lanceur vérifie sa présence avant de passer la main. Il ne convertit pas le jeu en CIA.
-- Dans les deux cas, le jeu est lu à **`sd:/3ds/pokesurvivor3ds.3dsx`**.
+- Au format 3DSX, le jeu est lu à **`sd:/3ds/pokesurvivor3ds.3dsx`**.
   Y placer le jeu actuel permet de jouer immédiatement, sans connexion.
 - La sauvegarde existante **`sd:/3ds/pokesurvivor3ds.sav`** n'est jamais ouverte,
   copiée, supprimée ni modifiée par le lanceur.
@@ -37,19 +37,19 @@ pointer vers les métadonnées GitHub ou vers un manifeste INI.
 
 ## Les trois actions
 
-- **Jouer** : hors ligne, transmet le chemin du jeu au chargeur Luma, puis ferme
+- **Jouer** : hors ligne, ouvre le titre CIA installé ou transmet le chemin du 3DSX au chargeur Luma, puis ferme
   le lanceur. Aucun RomFS du jeu n'est ouvert pendant une mise à jour.
 - **Mettre à jour** (ou **Installer le jeu** s'il est absent) : télécharge le
   manifeste, demande confirmation de la version et de la taille, contrôle l'espace
   libre, télécharge par blocs de 32 Kio, vérifie la taille, l’empreinte Git du fichier et son en-tête 3DSX,
-  puis installe. B annule le téléchargement et la copie de restauration.
+  ou l’identité CIA, puis installe. B annule le téléchargement et la copie de restauration.
   Les échanges de fichiers à la fin ne sont pas annulables.
 - **Restaurer la version précédente** : confirmation, copie et vérification du
   secours, puis échange des deux versions. La version quittée devient le secours,
   ce qui permet de revenir à la version récente. La sauvegarde actuelle est conservée ;
   le comportement des données nouvelles dans un ancien jeu relève du jeu lui-même.
 
-La recherche réseau a lieu uniquement à la demande. Les boutons Jouer/Restaurer
+La recherche manuelle est complétée par un contrôle automatique en arrière-plan (voir ci-dessous). Les boutons Jouer/Restaurer
 restent grisés si le fichier correspondant est absent. Une version déjà présente
 est vérifiée par empreinte ; si son fichier est altéré, elle peut être réinstallée.
 
@@ -76,7 +76,7 @@ signature d'auteur. Si le fichier change pendant le téléchargement, la vérifi
 métadonnées. Les copies de secours restent contrôlées avec SHA-256.
 
 GitHub limite les appels non authentifiés à son API (généralement 60 par heure
-et par adresse IP). Le lanceur ne consulte le dépôt que sur demande.
+et par adresse IP). Le contrôle automatique conserve un cache de quinze minutes pour limiter les appels.
 
 ### Alternative : releases et manifeste SHA-256
 
@@ -203,3 +203,31 @@ paramétrés et les erreurs réseau sont composés dans la langue active.
 `tools/localize_smdh.py` localise les descriptions d'application utilisées par le
 Homebrew Launcher et le menu HOME selon la langue de la console. Cette langue
 système est distincte de la préférence choisie dans l'interface du lanceur.
+
+## Contrôle automatique et CIA (1.2.0)
+
+Un thread de priorité inférieure démarre après le premier affichage du menu.
+Il consulte uniquement les métadonnées du format actif, sans relire le binaire.
+Budget global de trois secondes, lectures interrogées toutes les 100 ms, annulation
+coopérative avant une action manuelle. Les services HTTP ne sont jamais utilisés
+simultanément par la recherche et le téléchargement. Cache par format et URL,
+valable quinze minutes ; erreurs réseau silencieuses. Un changement d'identifiant
+de contenu est signalé, sans comparaison sémantique des versions.
+
+Le choix 3DSX/CIA précède la recherche manuelle. Le CIA utilise le fichier officiel
+`3ds/distribution/pokesurvivor3ds.cia`. La taille, l'objet Git, le TMD et le programme
+NCCH sont vérifiés : seul le titre `000400000ED53100` est accepté, distinct du lanceur.
+L'installation utilise AM_StartCiaInstall, ou AM_StartCiaInstallOverwrite pour
+actualiser un titre présent, puis AM_FinishCiaInstall. Aucun titre ni ticket n'est
+supprimé préalablement. L'ouverture utilise aptSetChainloader sur SD.
+
+Le paquet CIA et son secours restent sur SD. Le journal est écrit avant l'import
+natif ; un import interrompu peut reprendre au prochain démarrage à partir du
+paquet vérifié. La restauration réimporte le CIA précédent avant l'échange des
+paquets. Une panne pendant une écriture système peut nécessiter cette reprise ;
+le journal SD ne rend pas l'installation native atomique. La sauvegarde du jeu
+reste externe et n'est jamais touchée.
+
+Les tests hôte couvrent l'import initial et le remplacement, annulation, erreurs
+d'écriture/finalisation, identité du titre, restauration et reprise du journal.
+Ils ne remplacent pas une validation du service AM sur console réelle.
