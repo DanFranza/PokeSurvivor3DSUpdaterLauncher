@@ -1,5 +1,13 @@
 # Historique
 
+## 1.2.3
+
+- Menu « Version précédente » : choix de restaurer ou supprimer la copie de secours.
+- Confirmation avec version, taille et avertissement sur la perte de restauration.
+- Jeu installé et sauvegarde conservés ; secours CIA et 3DSX indépendants.
+- Refus de suppression pendant une transaction, nettoyage des métadonnées et tests.
+- Nouveaux messages traduits dans les cinq langues.
+
 ## 1.2.2
 
 - Remplacement de HTTPC par libcurl 8.23.0 et mbedTLS 3.6.7 : la négociation TLS est intégrée au lanceur.

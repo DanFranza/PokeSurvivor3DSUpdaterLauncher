@@ -101,10 +101,10 @@ static void frame(const std::string&heading="",const std::string&body="",float p
         panel(12,5,296,26,selected==3?gold():rgb(94,127,188));
         text(trf("Langue : {0}",{languageName(currentLanguage())}),155,11,.48f,white(),true);
         text("X",290,11,.48f,gold(),true);
-        const char*labels[]={"Jouer",hasGame()?"Mettre à jour":"Installer le jeu","Restaurer la version précédente"};
-        const char*desc[]={"Reprendre l'aventure","Vérifier les versions sur GitHub","Conserver la sauvegarde actuelle"};
+        const char*labels[]={"Jouer",hasGame()?"Mettre à jour":"Installer le jeu","Version précédente"};
+        const char*desc[]={"Reprendre l'aventure","Vérifier les versions sur GitHub","Restaurer ou supprimer le secours"};
         for(int i=0;i<3;i++){
-            bool enabled=i==1||(currentHealthy()&&(i==0?hasGame():exists(currentStorage().backup())));
+            bool enabled=i==1||(currentHealthy()&&(i==0?hasGame():currentStorage().hasBackupFiles()));
             float y=39+i*52;u32 color=!enabled?rgb(88,101,128):i==selected?gold():rgb(112,149,220);
             panel(12,y,296,46,color);icon(i,24,y+10,color);
             text(labels[i],62,y+7,i==2?.52f:.56f,color);
@@ -112,7 +112,7 @@ static void frame(const std::string&heading="",const std::string&body="",float p
             if(i==selected)text("▶",287,y+15,.40f,color,true);
         }
         bool available=startupCheck&&activeFormat==checkFormat&&hasGameUpdate(displayedVersion,startupCheck->latestVersion());
-        const char* waiting[]={"Démarrage du jeu...","Préparation de la mise à jour...","Préparation de la restauration...","","Fermeture..."};
+        const char* waiting[]={"Démarrage du jeu...","Préparation de la mise à jour...","Ouverture du secours...","","Fermeture..."};
         std::string message=pendingAction>=0?waiting[pendingAction]:available?"Une mise à jour est disponible.":notice;
         text(message,14,196,.45f,available?gold():white(),false,292);
         text("Croix : choix  A : valider  START : quitter",160,224,.45f,rgb(159,184,229),true);
@@ -271,6 +271,40 @@ static void restoreGame(){
     }
 }
 
+static void deletePreviousVersion(){
+    Storage& target=currentStorage();std::string error;
+    struct stat info{};uint64_t size=0;
+    if(stat(target.backup().c_str(),&info)==0&&S_ISREG(info.st_mode))size=uint64_t(info.st_size);
+    char label[48];snprintf(label,sizeof label,tr("%.1f Mo"),size/1048576.);
+    if(!dialog("Supprimer le secours",trf("Supprimer définitivement le secours {0} ({1}) ?\nLe jeu installé et la sauvegarde sont conservés.\nCette version ne pourra plus être restaurée.",{tr(target.backupVersion()),label}),true))return;
+    if(!target.deleteBackup(error)){dialog("Suppression impossible",error);return;}
+    notice="Copie de secours supprimée.";
+    dialog("Secours supprimé","Le jeu installé et votre sauvegarde sont conservés. La prochaine mise à jour créera un nouveau secours.");
+}
+static void backupMenu(){
+    int choice=0;
+    while(aptMainLoop()){
+        hidScanInput();u32 down=hidKeysDown();if(down&(KEY_B|KEY_START))return;
+        if(down&(KEY_DUP|KEY_DDOWN))choice=1-choice;
+        bool accept=down&KEY_A;
+        if(down&KEY_TOUCH){touchPosition p;hidTouchRead(&p);for(int i=0;i<2;i++)if(p.px>=18&&p.px<302&&p.py>=54+i*62&&p.py<106+i*62){choice=i;accept=true;}}
+        bool restorable=exists(currentStorage().backup());
+        C3D_FrameBegin(C3D_FRAME_SYNCDRAW);C2D_TextBufClear(textBuf);begin(top);drawTop();begin(bottom);background(320);
+        text("Version précédente",160,15,.6f,gold(),true);
+        for(int i=0;i<2;i++){
+            bool enabled=i==1||restorable;u32 color=!enabled?rgb(88,101,128):i==choice?gold():rgb(112,149,220);
+            float y=54+i*62;panel(18,y,284,52,color);
+            text(i==0?"Restaurer la version précédente":"Supprimer le secours",34,y+7,.50f,color,false,252);
+            text(i==0?"Revenir à cette version":"Libérer de la place sur la SD",34,y+33,.43f,enabled?white():rgb(88,101,128),false,252);
+        }
+        text("A Valider • B Retour",160,215,.45f,rgb(159,184,229),true);C3D_FrameEnd(0);
+        if(accept&&(choice==1||restorable)){
+            if(choice==0)restoreGame();else deletePreviousVersion();
+            return;
+        }
+    }
+}
+
 int main(){
     gfxInitDefault();romfsInit();C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);C2D_Init(C2D_DEFAULT_MAX_OBJECTS);C2D_Prepare();
     top=C2D_CreateScreenTarget(GFX_TOP,GFX_LEFT);bottom=C2D_CreateScreenTarget(GFX_BOTTOM,GFX_LEFT);
@@ -299,7 +333,7 @@ int main(){
             if(down&KEY_TOUCH){touchPosition p;hidTouchRead(&p);for(int i=0;i<3;i++)if(p.px>=12&&p.px<308&&p.py>=39+i*52&&p.py<85+i*52){selected=i;activate=true;}if(p.px>=12&&p.px<308&&p.py>=5&&p.py<31){selected=3;activate=true;}}
             if(activate){
                 if(selected==3){pendingAction=-1;languageMenu();continue;}
-                if(selected==1||(currentHealthy()&&(selected==0?hasGame():exists(currentStorage().backup())))){pendingAction=selected;startupCheck->cancel();}
+                if(selected==1||(currentHealthy()&&(selected==0?hasGame():currentStorage().hasBackupFiles()))){pendingAction=selected;startupCheck->cancel();}
             }
         }
         frame();
@@ -314,7 +348,7 @@ int main(){
         if(action==0){
             if(activeFormat==GameFormat::CIA){if(prepareGameCiaLaunch(e))break;dialog("Lancement impossible",e);}
             else{if(!valid3dsx(store.game())){dialog("Jeu invalide","Réinstaller le jeu avec Mettre à jour.");continue;}if(prepareLaunch(store.game(),e))break;dialog("Lancement impossible",e);}
-        }else if(action==1)update();else if(action==2)restoreGame();
+        }else if(action==1)update();else if(action==2)backupMenu();
     }
     startupCheck.reset();
     if(mascot)C2D_SpriteSheetFree(mascot);

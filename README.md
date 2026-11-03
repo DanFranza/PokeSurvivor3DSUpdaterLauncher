@@ -18,7 +18,7 @@ Ce dépôt contient uniquement le lanceur et son programme de mise à jour.
 
 - `pokesurvivor-launcher.3dsx` : ouverture depuis Homebrew Launcher.
 - `pokesurvivor-launcher.cia` : icône installable dans le menu HOME.
-- `PokeSurvivorLauncher-1.2.2.zip` : les deux formats, les sources et les licences.
+- `PokeSurvivorLauncher-1.2.3.zip` : les deux formats, les sources et les licences.
 
 ## Installer
 
@@ -69,7 +69,7 @@ Ce choix ne modifie pas la langue du jeu lui-même.
 | --- | --- |
 | **Jouer** | Ouvre le jeu installé, sans exiger de connexion Internet. |
 | **Mettre à jour** | Recherche le binaire publié, télécharge et vérifie le fichier, puis conserve l'ancienne version comme secours. |
-| **Restaurer la version précédente** | Rétablit le secours et conserve la version quittée pour pouvoir revenir dessus. |
+| **Version précédente** | Propose de restaurer le secours ou de le supprimer pour libérer de la place. |
 
 Si le jeu est absent, **Mettre à jour** devient **Installer le jeu**.
 Navigation à la croix ou au tactile ; A valide et START quitte. Les confirmations
@@ -91,6 +91,18 @@ La requête dispose d'un budget de trois secondes et son résultat est conservé
 quinze minutes ; hors ligne, aucun message d'erreur ne bloque le démarrage.
 Cette vérification nécessite une version connue, installée par le lanceur.
 L'action **Mettre à jour** effectue toujours une recherche à jour.
+
+## Supprimer la copie de secours
+
+Choisir **Version précédente → Supprimer le secours**. Le lanceur affiche
+la version et la taille de la copie, puis demande confirmation.
+Cette suppression est définitive : le retour à cette version ne sera plus
+disponible depuis le lanceur. Le jeu actuellement installé et sa sauvegarde
+sont conservés. Seul le secours du format actif (CIA ou 3DSX) est supprimé ;
+l'autre format reste intact.
+
+La copie de secours reste conservée par défaut. La prochaine mise à jour
+en créera une nouvelle, même après une suppression manuelle.
 
 ## D'où vient le jeu ?
 

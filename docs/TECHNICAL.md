@@ -294,3 +294,23 @@ et vérification de l’objet Git réussis. La validation sur matériel reste n�
 Les détails du dernier échec curl sont conservés localement dans
 `sd:/3ds/PokeSurvivorLauncher/network-error.txt` (code curl, erreur socket
 et diagnostic de bibliothèque).
+
+
+## Suppression du secours (1.2.3)
+
+L’action principale « Version précédente » ouvre un menu Restaurer/Supprimer.
+La suppression affiche la version et la taille puis exige une confirmation.
+Elle agit uniquement sur les chemins exacts .bak, .bak.version et .bak.sha256
+du format actif. Elle n’appelle pas le service AM et ne désinstalle aucun titre.
+Le jeu courant, ses métadonnées, l’autre format et la sauvegarde restent intacts.
+
+La suppression est refusée si un journal ou .previous indique une transaction
+à récupérer. Les répertoires ne sont jamais supprimés. En cas d’échec du retrait
+du binaire, ses métadonnées restent conservées ; si le nettoyage des métadonnées
+échoue après retrait du binaire, le menu permet de réessayer. Les métadonnées
+orphelines sont détectées. La création automatique d’un secours à la prochaine
+mise à jour reste inchangée.
+
+Les tests couvrent CIA et 3DSX, conservation des autres fichiers, suppression
+répétée, recréation au prochain remplacement, secours corrompu, journal présent,
+.previous présent, métadonnées orphelines et erreurs de nettoyage.

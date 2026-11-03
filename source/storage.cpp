@@ -97,3 +97,19 @@ bool Storage::restore(std::string&e,const std::function<bool(uint64_t,uint64_t)>
     if(rename(partial().c_str(),staged().c_str())){e="Préparation de la restauration impossible.";return false;}
     return install(backupVersion(),e,import);
 }
+
+bool Storage::deleteBackup(std::string& error){
+    if(busy()||exists(game()+".previous")){
+        error="Opération en cours : suppression du secours refusée.";return false;
+    }
+    // Exact backup paths only. unlink never follows symlinks or removes directories.
+    if(unlink(backup().c_str())&&errno!=ENOENT){
+        error="Impossible de supprimer la copie de secours.";return false;
+    }
+    bool cleaned=true;
+    for(const char* suffix:{".version",".sha256"}){
+        if(unlink((backup()+suffix).c_str())&&errno!=ENOENT)cleaned=false;
+    }
+    if(!cleaned){error="Copie supprimée, mais nettoyage incomplet. Réessayez.";return false;}
+    return true;
+}

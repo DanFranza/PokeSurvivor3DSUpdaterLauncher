@@ -28,5 +28,7 @@ public:
     bool recover(std::string&,const Import& import={});
     bool install(const std::string& version,std::string&,const Import& import={});
     bool restore(std::string&,const std::function<bool(uint64_t,uint64_t)>& progress,const Import& import={});
+    bool hasBackupFiles()const{return exists(backup())||exists(backup()+".version")||exists(backup()+".sha256");}
+    bool deleteBackup(std::string&);
     bool busy()const{return exists(game()+".journal");}
 };

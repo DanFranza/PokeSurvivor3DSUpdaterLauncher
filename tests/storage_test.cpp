@@ -59,4 +59,39 @@ static void interruption(){
     }
     auto s=fresh("bad-journal");seed(s);put(s.game()+".journal","corrupt");std::string e;CHECK(!s.recover(e));CHECK(readText(s.game())==executable('A'));assertSave(s);
 }
-int main(int argc,char**argv){CHECK(argc==2);root=argv[1];hashing();manifests();normal();firstInstall();invalid();interruption();std::cout<<checks<<" vérifications réussies.\n";}
+static void backupDeletion(){
+    auto s=fresh("delete-backup");seed(s);std::string e;
+    put(s.staged(),executable('B'));CHECK(s.install("v2",e));
+    // A CIA package and its backup in the same directory must stay untouched.
+    auto directory=fs::path(s.game()).parent_path().string();
+    Storage cia(directory,"pokesurvivor3ds.cia",valid3dsx);
+    put(cia.game(),executable('C'));put(cia.game()+".version","cia-v2");
+    put(cia.backup(),executable('D'));put(cia.backup()+".version","cia-v1");
+    put(cia.backup()+".sha256","CIA-HASH");
+    CHECK(s.hasBackupFiles());CHECK(s.deleteBackup(e));CHECK(!s.hasBackupFiles());
+    CHECK(readText(s.game())==executable('B'));CHECK(s.version()=="v2");assertSave(s);
+    CHECK(readText(cia.game())==executable('C'));CHECK(readText(cia.backup())==executable('D'));
+    CHECK(readText(cia.backup()+".sha256")=="CIA-HASH");
+    CHECK(s.deleteBackup(e));CHECK(!s.restore(e,[](uint64_t,uint64_t){return true;}));
+    put(s.staged(),executable('E'));CHECK(s.install("v3",e));
+    CHECK(s.backupVersion()=="v2");CHECK(readText(s.backup())==executable('B'));
+    CHECK(cia.deleteBackup(e));CHECK(!cia.hasBackupFiles());
+    CHECK(readText(cia.game())==executable('C'));CHECK(cia.version()=="cia-v2");
+    CHECK(readText(s.backup())==executable('B'));assertSave(s);
+    // Recovery files must block deletion, even when the backup is corrupt.
+    put(s.game()+".journal","v4\nv3");CHECK(!s.deleteBackup(e));CHECK(exists(s.backup()));
+    CHECK(remove((s.game()+".journal").c_str())==0);
+    put(s.game()+".previous",executable('F'));CHECK(!s.deleteBackup(e));CHECK(exists(s.backup()));
+    CHECK(remove((s.game()+".previous").c_str())==0);
+    put(s.backup(),"corrupt");CHECK(s.deleteBackup(e));CHECK(!s.hasBackupFiles());
+    // Remove orphan metadata, but never remove a directory masquerading as a file.
+    put(s.backup()+".version","v0");CHECK(s.hasBackupFiles());CHECK(s.deleteBackup(e));
+    fs::create_directory(s.backup());CHECK(!s.deleteBackup(e));CHECK(fs::is_directory(s.backup()));
+    CHECK(fs::remove(s.backup()));
+    put(s.backup(),executable('A'));fs::create_directory(s.backup()+".version");
+    CHECK(!s.deleteBackup(e));CHECK(!exists(s.backup()));CHECK(s.hasBackupFiles());
+    CHECK(fs::remove(s.backup()+".version"));CHECK(s.deleteBackup(e));CHECK(!s.hasBackupFiles());
+    CHECK(readText(s.game())==executable('E'));assertSave(s);
+}
+
+int main(int argc,char**argv){CHECK(argc==2);root=argv[1];hashing();manifests();normal();firstInstall();invalid();interruption();backupDeletion();std::cout<<checks<<" vérifications réussies.\n";}
