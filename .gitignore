@@ -1,0 +1,10 @@
+/build/
+/build-tests/
+/gfx/
+*.3dsx
+*.elf
+*.cia
+*.smdh
+*.map
+*.lst
+__pycache__/

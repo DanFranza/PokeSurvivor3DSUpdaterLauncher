@@ -1,0 +1,18 @@
+{
+  "name": "pokesurvivor3ds.3dsx",
+  "path": "3ds/distribution/pokesurvivor3ds.3dsx",
+  "sha": "3845b9ab4bb93ddd923555cd3329617addb96664",
+  "size": 48334904,
+  "url": "https://api.github.com/repos/DanFranza/pokesurvivor3DS/contents/3ds/distribution/pokesurvivor3ds.3dsx?ref=port-3ds-danfranza",
+  "html_url": "https://github.com/DanFranza/pokesurvivor3DS/blob/port-3ds-danfranza/3ds/distribution/pokesurvivor3ds.3dsx",
+  "git_url": "https://api.github.com/repos/DanFranza/pokesurvivor3DS/git/blobs/3845b9ab4bb93ddd923555cd3329617addb96664",
+  "download_url": "https://raw.githubusercontent.com/DanFranza/pokesurvivor3DS/port-3ds-danfranza/3ds/distribution/pokesurvivor3ds.3dsx",
+  "type": "file",
+  "content": "",
+  "encoding": "none",
+  "_links": {
+    "self": "https://api.github.com/repos/DanFranza/pokesurvivor3DS/contents/3ds/distribution/pokesurvivor3ds.3dsx?ref=port-3ds-danfranza",
+    "git": "https://api.github.com/repos/DanFranza/pokesurvivor3DS/git/blobs/3845b9ab4bb93ddd923555cd3329617addb96664",
+    "html": "https://github.com/DanFranza/pokesurvivor3DS/blob/port-3ds-danfranza/3ds/distribution/pokesurvivor3ds.3dsx"
+  }
+}
